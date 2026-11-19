@@ -112,3 +112,35 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# ============================================================
+# ARES 팀 프로젝트 설정
+# ============================================================
+
+# --- 공유하지 않는 개인 폴더 ---
+# Assets/Resources, Assets/Test 안의 내용은 각자 로컬에서만 사용합니다.
+# 폴더 자체(.meta + .gitkeep)는 공유해서 모두에게 같은 폴더 구조가 유지되도록 합니다.
+# 프로젝트 루트의 Assets 바로 아래 폴더만 해당합니다.
+# (TextMesh Pro 등 패키지 내부의 Resources 폴더는 계속 공유됨)
+/[Aa]ssets/[Rr]esources/*
+!/[Aa]ssets/[Rr]esources/.gitkeep
+/[Aa]ssets/[Tt]est/*
+!/[Aa]ssets/[Tt]est/.gitkeep
+
+# --- IDE / 에디터 개인 설정 ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- OS 자동 생성 파일 ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
