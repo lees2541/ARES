@@ -118,12 +118,11 @@ InitTestScene*.unity*
 # ============================================================
 
 # --- 공유하지 않는 개인 폴더 ---
-# Assets/Resources, Assets/Test 안의 내용은 각자 로컬에서만 사용합니다.
+# Assets/Imports, Assets/Test 안의 내용은 각자 로컬에서만 사용합니다.
 # 폴더 자체(.meta + .gitkeep)는 공유해서 모두에게 같은 폴더 구조가 유지되도록 합니다.
 # 프로젝트 루트의 Assets 바로 아래 폴더만 해당합니다.
-# (TextMesh Pro 등 패키지 내부의 Resources 폴더는 계속 공유됨)
-/[Aa]ssets/[Rr]esources/*
-!/[Aa]ssets/[Rr]esources/.gitkeep
+/[Aa]ssets/[Ii]mports/*
+!/[Aa]ssets/[Ii]mports/.gitkeep
 /[Aa]ssets/[Tt]est/*
 !/[Aa]ssets/[Tt]est/.gitkeep
 
