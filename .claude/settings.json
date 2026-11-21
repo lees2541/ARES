@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"[ARES] Before acting on this request, follow CLAUDE.md: first read the Docs/ files its table lists for this kind of task. Do not invent design rules or numbers; if the task depends on an undecided item from the open-questions doc, ask first. Use glossary identifiers in code. After the work, update the related Docs/ files.\"}}'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
