@@ -143,3 +143,10 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# --- Obsidian 볼트 (Docs/) 개인 설정 ---
+# 공유: app.json, core-plugins.json, templates.json
+/Docs/.obsidian/workspace*.json
+/Docs/.obsidian/cache
+/Docs/.obsidian/graph.json
+/Docs/.trash/
