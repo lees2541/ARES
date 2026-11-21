@@ -143,3 +143,8 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# --- 개인 문서 도구 설정 (Docs/) ---
+# Obsidian 등으로 Docs/를 열 때 생기는 개인 설정은 공유하지 않는다.
+/Docs/.obsidian/
+/Docs/.trash/
