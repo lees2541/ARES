@@ -172,9 +172,7 @@ namespace DungeonProto.EditorTools
             anim.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
             var ai = root.AddComponent<EnemyAI>();
-            ai.animator = anim;
-            ai.patrolSpeed = PatrolSpeed;
-            ai.chaseSpeed = ChaseSpeed;
+            ai.animator = anim; // 속도는 PrototypeSettings 의 "적"에서 정한다
 
             string avatarInfo = anim.avatar != null ? anim.avatar.name + " valid=" + anim.avatar.isValid : "none";
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);

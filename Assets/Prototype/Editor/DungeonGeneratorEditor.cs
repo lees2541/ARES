@@ -9,8 +9,20 @@ namespace DungeonProto.EditorTools
     {
         public override void OnInspectorGUI()
         {
-            DrawDefaultInspector();
             var gen = (DungeonGenerator)target;
+            var owner = gen.GetComponent<PrototypeGame>();
+            if (owner != null && owner.settings != null)
+            {
+                EditorGUILayout.HelpBox(
+                    "맵 크기(구역 수, 가로·세로, 순환 통로, 시드)와 적 수는 게임 설정 에셋의 \"맵\", \"적\"에서 정한다.\n" +
+                    (owner.settings.map.generateOnPlay
+                        ? "Play 를 누르면 그 값으로 던전을 자동으로 만든다. 아래 Layout 값은 마지막으로 만든 맵의 값이다.\n미리 보려면 Generate 를 누른다 (씬을 저장하면 맵도 함께 저장돼 씬 파일이 커진다)."
+                        : "자동 생성이 꺼져 있어 씬에 만들어 둔 맵을 그대로 쓴다. Generate 를 누르면 설정 값으로 다시 만든다."),
+                    MessageType.Info);
+                if (GUILayout.Button("게임 설정 열기")) PrototypeSettingsEditor.OpenSettings();
+                EditorGUILayout.Space();
+            }
+            DrawDefaultInspector();
             EditorGUILayout.Space();
             EditorGUILayout.LabelField($"생성된 구역: {gen.rooms?.Count ?? 0}", EditorStyles.miniLabel);
             using (new EditorGUILayout.HorizontalScope())
@@ -30,7 +42,10 @@ namespace DungeonProto.EditorTools
     {
         public static void Regenerate(DungeonGenerator gen, int seed)
         {
-            gen.seed = seed;
+            // 맵 크기의 원본은 게임 설정 에셋이다
+            var game = gen.GetComponent<PrototypeGame>();
+            if (game != null && game.settings != null) gen.ApplySettings(game.settings, seed);
+            else gen.seed = seed;
             gen.Generate();
             AssetDatabase.SaveAssets();
             EditorUtility.SetDirty(gen);
@@ -63,8 +78,24 @@ namespace DungeonProto.EditorTools
 
             if (Object.FindAnyObjectByType<PrototypePlayer>() == null) CreatePlayer();
 
+            // 구조 루프: 게임 상태 관리자, 민간인 수 관리자, 화면 표시를 생성기와 같은 오브젝트에 붙이고 설정 에셋을 연결한다
+            var game = gen.GetComponent<PrototypeGame>();
+            if (game == null) game = gen.gameObject.AddComponent<PrototypeGame>();
+            if (game.settings == null) game.settings = PrototypeSettingsEditor.LoadOrCreate();
+            if (gen.GetComponent<CivilianDirector>() == null) gen.gameObject.AddComponent<CivilianDirector>();
+            if (gen.GetComponent<PrototypeHud>() == null) gen.gameObject.AddComponent<PrototypeHud>();
+            EditorUtility.SetDirty(game);
+
+            if (game.settings.map.generateOnPlay)
+            {
+                // Play 때 자동으로 만들므로 씬에는 맵을 담아 두지 않는다 (씬 파일이 작게 유지된다)
+                gen.Clear();
+                EditorUtility.SetDirty(gen);
+                EditorSceneManager.MarkSceneDirty(gen.gameObject.scene);
+                return $"auto-generate on play, settings={AssetDatabase.GetAssetPath(game.settings)}";
+            }
             Regenerate(gen, gen.seed);
-            return $"rooms={gen.rooms.Count}";
+            return $"rooms={gen.rooms.Count}, settings={AssetDatabase.GetAssetPath(game.settings)}";
         }
 
         static void CreatePlayer()

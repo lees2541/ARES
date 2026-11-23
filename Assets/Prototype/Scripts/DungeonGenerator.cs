@@ -27,6 +27,7 @@ namespace DungeonProto
     /// 시설형 던전(외부 착륙지 + 복도와 방이 무작위로 이어진 내부) 그레이박스 생성기.
     /// 같은 seed 는 항상 같은 맵을 만든다.
     /// </summary>
+    [DefaultExecutionOrder(-200)]
     public class DungeonGenerator : MonoBehaviour
     {
         [Header("Layout")]
@@ -41,7 +42,10 @@ namespace DungeonProto
 
         [Header("Gameplay markers")]
         public int enemySpawnCount = 3;
-        public int extractionCount = 2;
+        [Tooltip("입구 문에서 착륙지 가장자리까지의 거리(m). 상점과 생존률 표시판은 그 사이, 입구 가까이에 놓인다.")]
+        public float landingDistance = 14f;
+        [Tooltip("예전 루팅 시험용 물체를 방에 놓을지. 구조 루프 프로토타입에서는 쓰지 않는다.")]
+        public bool spawnLoot = false;
         public Vector2Int lootPerRoom = new Vector2Int(1, 3);
 
         [Header("Atmosphere")]
@@ -85,6 +89,33 @@ namespace DungeonProto
 
         // ───────────────────────────────── public API
 
+        void Awake()
+        {
+            // Play 를 누르면 게임 설정의 "맵" 값으로 던전을 새로 만든다.
+            // 실행 순서를 앞당겨 두었으므로 EnemyDirector 가 NavMesh 를 굽기 전에 끝난다.
+            var settings = PrototypeSettings.Active;
+            if (!settings.map.generateOnPlay) return;
+            int useSeed = settings.map.randomSeed ? UnityEngine.Random.Range(1, 999999) : settings.map.seed;
+            ApplySettings(settings, useSeed);
+            Generate();
+        }
+
+        /// <summary>게임 설정의 "맵" 값을 생성기에 옮긴다. 맵 크기의 원본은 설정 에셋이고, 이 컴포넌트의 값은 마지막으로 만든 맵의 값이다.</summary>
+        public void ApplySettings(PrototypeSettings settings, int useSeed)
+        {
+            var map = settings.map;
+            seed = useSeed;
+            targetRooms = map.targetRooms;
+            loopChance = map.loopChance;
+            corridorChance = map.corridorChance;
+            // 입구 방(3x3 칸)이 들어갈 수 있도록 최소 6칸
+            int cellsX = Mathf.Max(6, Mathf.RoundToInt(map.width / cellSize));
+            int cellsY = Mathf.Max(6, Mathf.RoundToInt(map.depth / cellSize));
+            gridMin = new Vector2Int(-(cellsX / 2), 0);
+            gridMax = new Vector2Int(gridMin.x + cellsX - 1, cellsY - 1);
+            enemySpawnCount = settings.enemy.count;
+        }
+
         [ContextMenu("Generate")]
         public void Generate()
         {
@@ -122,7 +153,13 @@ namespace DungeonProto
             rooms = new List<RoomInfo>();
             var old = transform.Find(RootName);
             if (old == null) return;
-            if (Application.isPlaying) Destroy(old.gameObject);
+            if (Application.isPlaying)
+            {
+                // Destroy 는 프레임 끝에 처리된다. 같은 프레임에 굽는 NavMesh 에 예전 맵이 잡히지 않도록 먼저 끈다
+                old.gameObject.SetActive(false);
+                old.name = RootName + "_Old";
+                Destroy(old.gameObject);
+            }
             else DestroyImmediate(old.gameObject);
         }
 
@@ -141,7 +178,8 @@ namespace DungeonProto
         void Grow()
         {
             int attempts = 0;
-            while (rooms.Count < targetRooms && attempts++ < 5000)
+            int maxAttempts = Mathf.Max(5000, targetRooms * 200); // 큰 맵은 시도 횟수도 늘린다
+            while (rooms.Count < targetRooms && attempts++ < maxAttempts)
             {
                 var parent = rooms[rng.Next(rooms.Count)];
                 if (parent.links.Count >= (parent.kind == RoomKind.Corridor ? 3 : 4)) continue;
@@ -417,32 +455,22 @@ namespace DungeonProto
         void PlaceGameplay()
         {
             // 플레이어 스폰: 외부 착륙지 앞 (외부 미생성 시 입구 안)
-            var spawnPos = buildExterior ? new Vector3(0f, 0.05f, -33f) : new Vector3(0f, 0.05f, cellSize * 1.5f);
+            var spawnPos = buildExterior ? new Vector3(0f, 0.05f, -landingDistance + 2f) : new Vector3(0f, 0.05f, cellSize * 1.5f);
             Marker("PlayerSpawn", SpawnKind.PlayerSpawn, spawnPos, 0f, 0);
 
-            var candidates = rooms.FindAll(r => r.kind != RoomKind.Entrance && r.kind != RoomKind.Corridor);
-            candidates.Sort((a, b) => b.depth.CompareTo(a.depth));
-
-            // 추출 지점: 가장 먼 방 + 중간 거리 방
-            var extractionRooms = new List<RoomInfo>();
-            if (candidates.Count > 0) extractionRooms.Add(candidates[0]);
-            for (int i = candidates.Count / 2; i < candidates.Count && extractionRooms.Count < extractionCount; i++)
-                if (!extractionRooms.Contains(candidates[i])) extractionRooms.Add(candidates[i]);
-
-            int ex = 0;
-            foreach (var r in extractionRooms)
+            // 탈출구: 입구 방 안, 바깥 문 바로 안쪽. 민간인을 여기까지 데려오면 구출이다
             {
-                var wr = RoomWorldRect(r);
-                var p = new Vector3(wr.center.x, 0f, wr.center.y);
-                var go = Marker($"Extraction_{ex++}", SpawnKind.Extraction, p, 0f, 0);
+                EdgeFrame(exteriorDoor, out var doorMid, out _);
+                var p = doorMid + Vector3.forward * 2.6f;
+                var go = Marker("Exit", SpawnKind.Extraction, p, 0f, 0);
                 Box("Pad", go.transform, Vector3.up * 0.03f, new Vector3(3f, 0.06f, 3f), M("Extraction"), false, true);
                 var l = AddLight(go.transform, Vector3.up * 2.5f, new Color(0.3f, 1f, 0.45f), 6f, 2f);
-                l.name = "ExtractionLight";
-                r.occupied.Add(new Rect(p.x - 2f, p.z - 2f, 4f, 4f));
+                l.name = "ExitLight";
+                rooms[0].occupied.Add(new Rect(p.x - 2f, p.z - 2f, 4f, 4f));
             }
 
             // 적 스폰(벤트): 입구에서 먼 구역 위주, 복도 포함
-            var enemyRooms = rooms.FindAll(r => r.kind != RoomKind.Entrance && !extractionRooms.Contains(r));
+            var enemyRooms = rooms.FindAll(r => r.kind != RoomKind.Entrance);
             enemyRooms.Sort((a, b) => b.depth.CompareTo(a.depth));
             int placed = 0;
             for (int i = 0; i < enemyRooms.Count && placed < enemySpawnCount; i += 2)
@@ -516,7 +544,7 @@ namespace DungeonProto
                         break;
                 }
 
-                if (r.kind == RoomKind.Corridor || r.kind == RoomKind.Entrance) continue;
+                if (!spawnLoot || r.kind == RoomKind.Corridor || r.kind == RoomKind.Entrance) continue;
 
                 int lootCount = rng.Next(lootPerRoom.x, lootPerRoom.y + 1);
                 if (r.links.Count == 1) lootCount++;      // 막다른 방 보너스
@@ -685,36 +713,66 @@ namespace DungeonProto
             var ext = new GameObject("Exterior").transform;
             ext.SetParent(root, false);
 
-            Box("Ground", ext, new Vector3(0f, -0.52f, 20f), new Vector3(260f, 1f, 260f), M("Ground"));
-            Box("Path", ext, new Vector3(0f, -0.06f, -18f), new Vector3(3.2f, 0.1f, 36f), M("Path"), false);
+            // 착륙지의 입구 쪽 가장자리가 문에서 landingDistance 만큼 떨어지도록 통째로 옮긴다 (예전 배치는 35m)
+            float padCenter = -landingDistance - 12f;
+            float dz = padCenter + 47f;
+
+            // 바닥은 건물과 착륙지를 모두 덮도록 맵 크기에 맞춘다
+            var b = BuildingBounds();
+            float gxMin = Mathf.Min(b.xMin, -30f) - 50f, gxMax = Mathf.Max(b.xMax, 30f) + 50f;
+            float gzMin = padCenter - 52f, gzMax = b.yMax + 50f;
+            Box("Ground", ext, new Vector3((gxMin + gxMax) * 0.5f, -0.52f, (gzMin + gzMax) * 0.5f),
+                new Vector3(gxMax - gxMin, 1f, gzMax - gzMin), M("Ground"));
+            Box("Path", ext, new Vector3(0f, -0.06f, -(landingDistance + 1f) * 0.5f), new Vector3(3.2f, 0.1f, landingDistance + 1f), M("Path"), false);
 
             // 착륙지 + 수송선(플레이스홀더)
-            Box("LandingPad", ext, new Vector3(0f, 0.0f, -47f), new Vector3(18f, 0.3f, 24f), M("Pad"));
+            Box("LandingPad", ext, new Vector3(0f, 0.0f, padCenter), new Vector3(18f, 0.3f, 24f), M("Pad"));
             var ship = new GameObject("DropShip").transform;
             ship.SetParent(ext, false);
-            Box("Hull", ship, new Vector3(0f, 3.6f, -48f), new Vector3(10f, 5f, 14f), M("Ship"));
-            Box("Cockpit", ship, new Vector3(0f, 4.4f, -56.5f), new Vector3(6f, 3f, 3f), M("Ship"));
-            Box("CockpitGlass", ship, new Vector3(0f, 4.8f, -58.05f), new Vector3(4.5f, 1.2f, 0.1f), M("Glass"), false);
+            Box("Hull", ship, new Vector3(0f, 3.6f, -48f + dz), new Vector3(10f, 5f, 14f), M("Ship"));
+            Box("Cockpit", ship, new Vector3(0f, 4.4f, -56.5f + dz), new Vector3(6f, 3f, 3f), M("Ship"));
+            Box("CockpitGlass", ship, new Vector3(0f, 4.8f, -58.05f + dz), new Vector3(4.5f, 1.2f, 0.1f), M("Glass"), false);
             float rampAngle = Mathf.Atan2(1.1f, 4.6f) * Mathf.Rad2Deg;
-            var ramp = Box("Ramp", ship, new Vector3(0f, 0.6f, -38.7f), new Vector3(3.5f, 0.2f, 4.8f), M("ShipDark"));
+            var ramp = Box("Ramp", ship, new Vector3(0f, 0.6f, -38.7f + dz), new Vector3(3.5f, 0.2f, 4.8f), M("ShipDark"));
             ramp.transform.localRotation = Quaternion.Euler(rampAngle, 0f, 0f);
             foreach (var lx in new[] { -4f, 4f })
                 foreach (var lz in new[] { -53f, -43f })
-                    Cyl("Leg", ship, new Vector3(lx, 0.6f, lz), 0.5f, 1.2f, M("ShipDark"));
-            AddLight(ship, new Vector3(0f, 2.8f, -40.6f), new Color(1f, 0.95f, 0.8f), 10f, 2.5f).name = "RampLight";
+                    Cyl("Leg", ship, new Vector3(lx, 0.6f, lz + dz), 0.5f, 1.2f, M("ShipDark"));
+            AddLight(ship, new Vector3(0f, 2.8f, -40.6f + dz), new Color(1f, 0.95f, 0.8f), 10f, 2.5f).name = "RampLight";
 
             // 입구 외부 조명
             AddLight(ext, new Vector3(0f, 4.2f, -1.5f), new Color(1f, 0.8f, 0.5f), 9f, 2.2f).name = "EntranceLight";
 
-            // 바위: 건물·길·착륙지를 피해서
-            var b = BuildingBounds();
+            // 상점: 입구로 가는 길 오른쪽. 여기서만 물품을 살 수 있다
+            var shop = new GameObject("Shop");
+            shop.transform.SetParent(ext, false);
+            shop.transform.localPosition = new Vector3(4.6f, 0f, -5.5f);
+            shop.AddComponent<ShopStation>();
+            Box("Counter", shop.transform, new Vector3(0f, 0.55f, 0f), new Vector3(2.6f, 1.1f, 1.1f), M("Crate"));
+            Box("Back", shop.transform, new Vector3(0.9f, 1.2f, 0f), new Vector3(0.5f, 2.4f, 1.6f), M("ShipDark"));
+            Box("Roof", shop.transform, new Vector3(0f, 2.45f, 0f), new Vector3(3f, 0.12f, 2f), M("ShipDark"));
+            AddLight(shop.transform, new Vector3(-0.6f, 2.1f, 0f), new Color(1f, 0.85f, 0.5f), 7f, 2.2f).name = "ShopLight";
+
+            // 생존률 표시판: 입구 문 왼쪽, 길 건너 상점 맞은편. 글자는 착륙지 쪽을 향한다
+            var board = new GameObject("SurvivalBoard");
+            board.transform.SetParent(ext, false);
+            board.transform.localPosition = new Vector3(-2.6f, 1.75f, -1.3f);
+            board.AddComponent<SurvivalBoard>();
+            Box("Panel", board.transform, Vector3.zero, new Vector3(3.6f, 2f, 0.12f), M("PropDark"));
+            Box("PostL", board.transform, new Vector3(-1.6f, -1.25f, 0.05f), new Vector3(0.12f, 1f, 0.12f), M("ShipDark"), false);
+            Box("PostR", board.transform, new Vector3(1.6f, -1.25f, 0.05f), new Vector3(0.12f, 1f, 0.12f), M("ShipDark"), false);
+            AddLight(board.transform, new Vector3(0f, 0.6f, -1.6f), new Color(0.8f, 0.9f, 1f), 6f, 1.6f).name = "BoardLight";
+
+            // 바위: 건물·길·착륙지를 피해서. 수는 바닥 넓이에 맞춘다
+            int rockTarget = Mathf.Clamp(Mathf.RoundToInt((gxMax - gxMin) * (gzMax - gzMin) / 900f), 45, 160);
             int rocks = 0;
-            for (int tries = 0; tries < 300 && rocks < 45; tries++)
+            for (int tries = 0; tries < rockTarget * 8 && rocks < rockTarget; tries++)
             {
-                var p = new Vector3((float)(rng.NextDouble() * 160 - 80), 0f, (float)(rng.NextDouble() * 150 - 70));
+                var p = new Vector3(Mathf.Lerp(gxMin + 8f, gxMax - 8f, (float)rng.NextDouble()), 0f,
+                                    Mathf.Lerp(gzMin + 8f, gzMax - 8f, (float)rng.NextDouble()));
                 var p2 = new Vector2(p.x, p.z);
                 if (b.Contains(p2)) continue;
-                if (Mathf.Abs(p.x) < 12f && p.z < 2f && p.z > -64f) continue;
+                if (Mathf.Abs(p.x) < 12f && p.z < 2f && p.z > padCenter - 17f) continue;
                 float s = 1f + (float)rng.NextDouble() * 4f;
                 var rock = Box("Rock", ext, p + Vector3.up * (s * 0.3f), new Vector3(s, s * (0.6f + (float)rng.NextDouble() * 0.8f), s * (0.7f + (float)rng.NextDouble() * 0.6f)), M("Rock"));
                 rock.transform.localRotation = Quaternion.Euler(rng.Next(-20, 20), rng.Next(0, 360), rng.Next(-20, 20));

@@ -13,13 +13,8 @@ namespace DungeonProto
     [RequireComponent(typeof(DungeonGenerator))]
     public class EnemyDirector : MonoBehaviour
     {
+        [Tooltip("적 프리팹. 적 수·등장 간격은 PrototypeSettings 의 \"적\"에서 바꾼다.")]
         public GameObject enemyPrefab;
-        [Tooltip("첫 스폰까지 대기(초)")]
-        public float firstSpawnDelay = 2f;
-        [Tooltip("다음 벤트 스폰까지 간격(초)")]
-        public float spawnInterval = 6f;
-        [Tooltip("0 이면 벤트 수만큼")]
-        public int maxEnemies = 0;
 
         public readonly List<EnemyAI> Enemies = new List<EnemyAI>();
         public float LastBakeMs { get; private set; }
@@ -39,13 +34,16 @@ namespace DungeonProto
             var vents = new List<SpawnMarker>();
             foreach (var m in GetComponentsInChildren<SpawnMarker>())
                 if (m.kind == SpawnKind.EnemySpawn) vents.Add(m);
-            int count = maxEnemies > 0 ? Mathf.Min(maxEnemies, vents.Count) : vents.Count;
+            var cfg = PrototypeSettings.Active.enemy;
+            int count = cfg.count;
+            if (count <= 0 || vents.Count == 0) yield break;
 
-            yield return new WaitForSeconds(firstSpawnDelay);
+            yield return new WaitForSeconds(cfg.firstSpawnDelay);
             for (int i = 0; i < count; i++)
             {
-                Spawn(vents[i].transform.position, vents[i].name);
-                if (i < count - 1) yield return new WaitForSeconds(spawnInterval);
+                var vent = vents[i % vents.Count]; // 벤트가 적 수보다 적으면 돌아가며 쓴다
+                Spawn(vent.transform.position, vent.name);
+                if (i < count - 1) yield return new WaitForSeconds(cfg.spawnInterval);
             }
         }
 
@@ -58,6 +56,8 @@ namespace DungeonProto
             }
             var go = Instantiate(enemyPrefab, hit.position, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
             go.name = $"{enemyPrefab.name}_{Enemies.Count}";
+            // 플레이 중에 NavMesh 를 다시 구울 때 적의 충돌체가 장애물로 잡히지 않게 한다
+            if (go.GetComponent<NavMeshModifier>() == null) go.AddComponent<NavMeshModifier>().ignoreFromBuild = true;
             var ai = go.GetComponent<EnemyAI>();
             ai.Init(dungeon);
             Enemies.Add(ai);
@@ -95,6 +95,16 @@ namespace DungeonProto
             var sw = System.Diagnostics.Stopwatch.StartNew();
             surface.BuildNavMesh();
             LastBakeMs = (float)sw.Elapsed.TotalMilliseconds;
+        }
+
+        /// <summary>
+        /// 플레이 중에 NavMesh 를 갱신한다 (안전지대를 설치했을 때).
+        /// 같은 NavMesh 데이터를 그 자리에서 고치므로 움직이던 적과 민간인은 그대로 이어서 움직인다.
+        /// </summary>
+        public void RefreshNavMesh()
+        {
+            if (surface != null && surface.navMeshData != null) surface.UpdateNavMesh(surface.navMeshData);
+            else BakeNavMesh();
         }
     }
 }
