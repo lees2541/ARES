@@ -1,0 +1,113 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d4ad7d9abb8095d4a960d4e0bd74b085, type: 3}
+  m_Name: PrototypeSettings
+  m_EditorClassIdentifier: Assembly-CSharp::DungeonProto.PrototypeSettings
+  map:
+    generateOnPlay: 1
+    randomSeed: 1
+    seed: 1234
+    targetRooms: 150
+    width: 208
+    depth: 208
+    loopChance: 0.3
+    corridorChance: 0.7
+  population:
+    minOutside: 7
+    maxOutside: 7
+    minSpawnDistanceFromPlayer: 15
+    checkInterval: 1
+  reward:
+    rescue: 100
+    selfEscape: 50
+    corpse: 30
+    safeZoneArrival: 0
+  shop:
+    shopRange: 4
+    ammoPackPrice: 20
+    ammoPackSize: 5
+    guideMarkerPrice: 15
+    safeZonePrice: 150
+    decoyPrice: 100
+    startCurrency: 100
+    startAmmo: 6
+    startGuideMarkers: 3
+    startSafeZones: 0
+    startWithDecoy: 0
+  civilian:
+    walkSpeed: 1.5
+    runSpeed: 4.35
+    followSpeed: 4.3
+    followStopDistance: 1.6
+    sightRange: 12
+    sightAngle: 160
+    noticeRadius: 5
+    wanderRadius: 8
+    wanderWait: {x: 1, y: 3.5}
+    fleeDistance: 14
+    fleeMemory: 3
+    showStateLabel: 1
+    labelDistance: 25
+  rescue:
+    carrySpeedMultiplier: 0.6
+    exitRadius: 2.5
+  guideMarker:
+    recognitionDistance: 10
+    extraWalkDistance: 6
+    arrowConeAngle: 120
+    memorySeconds: 30
+    arriveDistance: 1
+    placeDistance: 4
+  safeZone:
+    radius: 3
+  gun:
+    stunSeconds: 3
+    range: 25
+    fireInterval: 0.5
+    noiseRadius: 0
+  decoy:
+    duration: 5
+    range: 20
+    cooldown: 8
+  rangeIndicator:
+    show: 1
+    lineWidth: 0.07
+    segments: 64
+    heightOffset: 0.06
+    validColor: {r: 0.3, g: 1, b: 0.5, a: 1}
+    invalidColor: {r: 1, g: 0.3, b: 0.25, a: 1}
+  player:
+    maxHealth: 100
+    walkSpeed: 4
+    sprintSpeed: 6.5
+    crouchSpeed: 2
+    jumpHeight: 1.1
+    staminaMax: 5
+    staminaRecover: 0.6
+    mouseSensitivity: 0.1
+    interactDistance: 3
+  enemy:
+    count: 4
+    firstSpawnDelay: 2
+    spawnInterval: 6
+    patrolSpeed: 1.6
+    investigateSpeed: 2.4
+    chaseSpeed: 4.2
+    sightRange: 16
+    sightAngle: 120
+    hearSprintRange: 11
+    hearWalkRange: 4.5
+    loseSightTime: 4
+    catchDistance: 1.3
+    damagePerCatch: 34
+    targetPriority: 0
+    showStateLabel: 1
