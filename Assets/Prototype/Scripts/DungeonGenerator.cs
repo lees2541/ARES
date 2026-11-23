@@ -46,6 +46,8 @@ namespace DungeonProto
         public float landingDistance = 14f;
         [Tooltip("예전 루팅 시험용 물체를 방에 놓을지. 구조 루프 프로토타입에서는 쓰지 않는다.")]
         public bool spawnLoot = false;
+        [Tooltip("방마다 숨을 곳(캐비닛) 하나가 놓일 확률. 게임 설정의 \"숨을 곳\"에서 정한다.")]
+        [Range(0f, 1f)] public float hidingSpotChance = 0.35f;
         public Vector2Int lootPerRoom = new Vector2Int(1, 3);
 
         [Header("Atmosphere")]
@@ -114,6 +116,7 @@ namespace DungeonProto
             gridMin = new Vector2Int(-(cellsX / 2), 0);
             gridMax = new Vector2Int(gridMin.x + cellsX - 1, cellsY - 1);
             enemySpawnCount = settings.enemy.count;
+            hidingSpotChance = settings.hiding.mapChance;
         }
 
         [ContextMenu("Generate")]
@@ -494,6 +497,10 @@ namespace DungeonProto
                 var wr = RoomWorldRect(r);
                 int area = r.rect.width * r.rect.height;
 
+                // 숨을 곳은 다른 물건보다 먼저 놓아 문 앞 자리를 확보한다
+                if (r.kind != RoomKind.Corridor && r.kind != RoomKind.Entrance && rng.NextDouble() < hidingSpotChance)
+                    PlaceHidingSpot(r, group);
+
                 switch (r.kind)
                 {
                     case RoomKind.Entrance:
@@ -564,6 +571,41 @@ namespace DungeonProto
                     rb.mass = 2f + s * 10f;
                     rb.interpolation = RigidbodyInterpolation.Interpolate;
                 }
+            }
+        }
+
+        /// <summary>숨을 곳(캐비닛)을 벽에 붙여 놓는다. 문은 방 안쪽을 향하고, 문 앞은 비워 둔다.</summary>
+        void PlaceHidingSpot(RoomInfo r, Transform group)
+        {
+            var wr = RoomWorldRect(r);
+            float w = HidingSpot.Width, d = HidingSpot.Depth, front = 1.2f;
+            float inset = WallT * 0.5f + d * 0.5f + 0.03f;
+            for (int tries = 0; tries < 14; tries++)
+            {
+                int side = rng.Next(4);
+                Vector3 p; float yaw; Rect rect;
+                if (side < 2)
+                {
+                    float z = Mathf.Lerp(wr.yMin + w * 0.5f + 0.4f, wr.yMax - w * 0.5f - 0.4f, (float)rng.NextDouble());
+                    bool left = side == 0;
+                    p = new Vector3(left ? wr.xMin + inset : wr.xMax - inset, 0f, z);
+                    yaw = left ? 90f : -90f;
+                    rect = left ? new Rect(p.x - d * 0.5f, z - w * 0.5f, d + front, w)
+                                : new Rect(p.x - d * 0.5f - front, z - w * 0.5f, d + front, w);
+                }
+                else
+                {
+                    float x = Mathf.Lerp(wr.xMin + w * 0.5f + 0.4f, wr.xMax - w * 0.5f - 0.4f, (float)rng.NextDouble());
+                    bool bottom = side == 2;
+                    p = new Vector3(x, 0f, bottom ? wr.yMin + inset : wr.yMax - inset);
+                    yaw = bottom ? 0f : 180f;
+                    rect = bottom ? new Rect(x - w * 0.5f, p.z - d * 0.5f, w, d + front)
+                                  : new Rect(x - w * 0.5f, p.z - d * 0.5f - front, w, d + front);
+                }
+                if (!SpotFree(r, rect, 0.3f) || NearDoor(r, p, 2.6f)) continue;
+                r.occupied.Add(rect);
+                HidingSpot.Build(group, p, yaw, M("Cabinet"), M("CabinetDoor"));
+                return;
             }
         }
 
@@ -880,6 +922,8 @@ namespace DungeonProto
                 case "ShipDark": c = new Color(0.25f, 0.26f, 0.28f); break;
                 case "Glass": c = new Color(0.2f, 0.4f, 0.5f); em = new Color(0.05f, 0.2f, 0.3f); break;
                 case "Rock": c = new Color(0.28f, 0.27f, 0.26f); break;
+                case "Cabinet": c = new Color(0.23f, 0.27f, 0.34f); break;
+                case "CabinetDoor": c = new Color(0.33f, 0.4f, 0.5f); break;
                 default: c = Color.magenta; break;
             }
             var mat = LoadOrCreateMaterial("Proto_" + key, c, em);

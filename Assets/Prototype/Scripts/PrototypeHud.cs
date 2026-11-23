@@ -28,11 +28,11 @@ namespace DungeonProto
         static readonly Color HealthColor = new Color(0.92f, 0.24f, 0.24f);
         static readonly Color StaminaColor = new Color(0.9f, 0.92f, 0.96f);
 
-        static readonly string[] ToolNames = { "총", "유도표시\n탈출용", "유도표시\n안전지대용", "안전지대", "디코이" };
+        static readonly string[] ToolNames = { "총", "유도표시\n탈출용", "유도표시\n안전지대용", "안전지대", "디코이", "숨을 곳" };
         static readonly Color[] ToolColors =
         {
             new Color(1f, 0.86f, 0.4f), new Color(0.2f, 1f, 0.35f), new Color(0.25f, 0.6f, 1f),
-            new Color(0.3f, 0.5f, 1f), new Color(0.85f, 0.5f, 1f),
+            new Color(0.3f, 0.5f, 1f), new Color(0.85f, 0.5f, 1f), new Color(0.6f, 0.78f, 0.95f),
         };
 
         const string Key = "<color=#FFD24D><b>";
@@ -41,12 +41,15 @@ namespace DungeonProto
         static readonly string PromptUnfollow = Key + "E" + KeyEnd + " 따라오기 풀기      " + Key + "G" + KeyEnd + " 들기";
         static readonly string PromptCorpse = Key + "G" + KeyEnd + " 시체 들기";
         static readonly string PromptDrop = Key + "G" + KeyEnd + " 내려놓기";
+        static readonly string PromptOpen = Key + "E" + KeyEnd + " 숨을 곳 열어 보기";
+        static readonly string PromptTakeOut = "민간인이 숨어 있습니다      " + Key + "E" + KeyEnd + " 데리고 나오기      " + Key + "G" + KeyEnd + " 들고 나오기";
+        static readonly string PromptEmpty = "비어 있습니다      " + Key + "E" + KeyEnd + " 닫기";
 
         static readonly string[,] HelpRows =
         {
             { "W A S D", "이동" }, { "Shift", "달리기 (스태미너 사용)" }, { "C", "웅크리기 (소리가 나지 않음)" }, { "Space", "점프" },
-            { "F", "손전등" }, { "1 ~ 5, 휠", "도구 고르기" }, { "마우스 왼쪽", "고른 도구 쓰기" }, { "E", "민간인 따라오게 하기 / 풀기" },
-            { "G", "민간인·시체 들기 / 내려놓기" }, { "7 8 9 0", "상점에서 사기 (상점 가까이에서)" }, { "Esc", "마우스 커서 풀기" }, { "H", "이 조작법 켜고 끄기" },
+            { "F", "손전등" }, { "1 ~ 6, 휠", "도구 고르기" }, { "마우스 왼쪽", "고른 도구 쓰기" }, { "E", "따라오게 하기 / 숨을 곳 열기" },
+            { "G", "민간인·시체 들기 / 내려놓기" }, { "7 8 9 0 -", "상점에서 사기 (상점 가까이에서)" }, { "Esc", "마우스 커서 풀기" }, { "H", "이 조작법 켜고 끄기" },
         };
 
         PrototypePlayer player;
@@ -65,11 +68,11 @@ namespace DungeonProto
         int lastHealth = -1;
 
         // 도구 슬롯
-        readonly RectTransform[] slotRects = new RectTransform[5];
-        readonly UnityEngine.UI.Image[] slotPanels = new UnityEngine.UI.Image[5];
-        readonly UnityEngine.UI.Text[] slotNames = new UnityEngine.UI.Text[5];
-        readonly UnityEngine.UI.Text[] slotCounts = new UnityEngine.UI.Text[5];
-        readonly RectTransform[] slotAccents = new RectTransform[5];
+        readonly RectTransform[] slotRects = new RectTransform[6];
+        readonly UnityEngine.UI.Image[] slotPanels = new UnityEngine.UI.Image[6];
+        readonly UnityEngine.UI.Text[] slotNames = new UnityEngine.UI.Text[6];
+        readonly UnityEngine.UI.Text[] slotCounts = new UnityEngine.UI.Text[6];
+        readonly RectTransform[] slotAccents = new RectTransform[6];
         int lastSlotVersion = -1, lastTool = -1;
         bool lastCarrying;
         float nextSlotTick;
@@ -80,7 +83,7 @@ namespace DungeonProto
 
         // 가운데
         readonly UnityEngine.UI.Image[] crosshair = new UnityEngine.UI.Image[5];
-        UnityEngine.UI.Image promptPanel, statusPanel;
+        UnityEngine.UI.Image promptPanel, statusPanel, aimRing;
         UnityEngine.UI.Text promptText, statusText, bigText;
         string lastPrompt, lastStatus;
 
@@ -94,9 +97,9 @@ namespace DungeonProto
         // 상점
         GameObject shopRoot;
         UnityEngine.UI.Text shopCurrency;
-        readonly UnityEngine.UI.Text[] shopNames = new UnityEngine.UI.Text[4];
-        readonly UnityEngine.UI.Text[] shopSubs = new UnityEngine.UI.Text[4];
-        readonly UnityEngine.UI.Text[] shopPrices = new UnityEngine.UI.Text[4];
+        readonly UnityEngine.UI.Text[] shopNames = new UnityEngine.UI.Text[5];
+        readonly UnityEngine.UI.Text[] shopSubs = new UnityEngine.UI.Text[5];
+        readonly UnityEngine.UI.Text[] shopPrices = new UnityEngine.UI.Text[5];
         int lastShopVersion = -1;
 
         // 조작법, 피격 표시, 머리 위 문구
@@ -159,6 +162,12 @@ namespace DungeonProto
                 worldLabels[i] = t;
             }
 
+            // 조준하고 있는 대상 위에 그리는 고리
+            aimRing = Box("AimRing", labelRoot, BL, CC, Vector2.zero, new Vector2(58f, 58f), Good);
+            aimRing.sprite = MakeRing(64, 5f);
+            aimRing.type = UnityEngine.UI.Image.Type.Simple;
+            aimRing.gameObject.SetActive(false);
+
             // 왼쪽 아래: 체력 · 스태미너
             var vitals = Box("Vitals", root, BL, BL, new Vector2(36f, 36f), new Vector2(400f, 98f), PanelColor).transform;
             Label("HealthLabel", vitals, TL, TL, new Vector2(20f, -14f), new Vector2(90f, 26f), 17, TextDim, TextAnchor.MiddleLeft);
@@ -172,9 +181,9 @@ namespace DungeonProto
             staminaFill = Fill("Fill", stBack, StaminaColor);
 
             // 가운데 아래: 도구 슬롯
-            const float slotW = 146f, slotH = 106f, gap = 10f;
-            var hotbar = Node("Hotbar", root, BC, BC, new Vector2(0f, 34f), new Vector2(slotW * 5f + gap * 4f, slotH));
-            for (int i = 0; i < 5; i++)
+            const float slotW = 132f, slotH = 106f, gap = 10f;
+            var hotbar = Node("Hotbar", root, BC, BC, new Vector2(0f, 34f), new Vector2(slotW * 6f + gap * 5f, slotH));
+            for (int i = 0; i < ToolNames.Length; i++)
             {
                 var panel = Box("Slot" + (i + 1), hotbar, BL, BL, new Vector2(i * (slotW + gap), 0f), new Vector2(slotW, slotH), PanelColor);
                 slotPanels[i] = panel;
@@ -182,7 +191,7 @@ namespace DungeonProto
                 var badge = Box("Key", panel.transform, TL, TL, new Vector2(8f, -8f), new Vector2(26f, 26f), new Color(1f, 1f, 1f, 0.92f)).transform;
                 var keyText = Label("KeyText", badge, CC, CC, Vector2.zero, new Vector2(26f, 26f), 17, new Color(0.08f, 0.09f, 0.12f), TextAnchor.MiddleCenter, true);
                 keyText.text = (i + 1).ToString();
-                slotNames[i] = Label("Name", panel.transform, TC, TC, new Vector2(10f, -9f), new Vector2(104f, 44f), 15, TextMain, TextAnchor.MiddleCenter);
+                slotNames[i] = Label("Name", panel.transform, TC, TC, new Vector2(10f, -9f), new Vector2(94f, 44f), 15, TextMain, TextAnchor.MiddleCenter);
                 slotNames[i].text = ToolNames[i];
                 slotCounts[i] = Label("Count", panel.transform, BC, BC, new Vector2(0f, 14f), new Vector2(slotW - 12f, 30f), 22, TextMain, TextAnchor.MiddleCenter, true);
                 var accent = Box("Accent", panel.transform, BL, BL, new Vector2(12f, 7f), new Vector2(slotW - 24f, 4f), ToolColors[i], false);
@@ -229,7 +238,7 @@ namespace DungeonProto
             crosshair[4] = Box("Right", cross, CC, CC, new Vector2(13f, 0f), new Vector2(9f, 2f), Color.white, false);
 
             // 조준점 아래: 상호작용 안내
-            promptPanel = Box("Prompt", root, CC, TC, new Vector2(0f, -44f), new Vector2(420f, 40f), PanelColor);
+            promptPanel = Box("Prompt", root, CC, TC, new Vector2(0f, -78f), new Vector2(420f, 40f), PanelColor);
             promptText = Label("Text", promptPanel.transform, CC, CC, Vector2.zero, new Vector2(900f, 40f), 19, TextMain, TextAnchor.MiddleCenter);
             promptPanel.gameObject.SetActive(false);
 
@@ -247,13 +256,13 @@ namespace DungeonProto
             bigText.gameObject.SetActive(false);
 
             // 오른쪽: 상점
-            shopRoot = Box("Shop", root, RC, RC, new Vector2(-36f, -10f), new Vector2(430f, 338f), PanelColor).gameObject;
+            shopRoot = Box("Shop", root, RC, RC, new Vector2(-36f, -10f), new Vector2(430f, 398f), PanelColor).gameObject;
             var shop = shopRoot.transform;
             Label("Title", shop, TL, TL, new Vector2(24f, -16f), new Vector2(150f, 32f), 26, TextMain, TextAnchor.MiddleLeft, true);
             LastLabel.text = "상점";
             shopCurrency = Label("Currency", shop, TR, TR, new Vector2(-24f, -16f), new Vector2(220f, 32f), 22, Gold, TextAnchor.MiddleRight, true);
-            string[] keys = { "7", "8", "9", "0" };
-            for (int i = 0; i < 4; i++)
+            string[] keys = { "7", "8", "9", "0", "-" };
+            for (int i = 0; i < keys.Length; i++)
             {
                 var row = Box("Row" + i, shop, TL, TL, new Vector2(14f, -62f - i * 60f), new Vector2(402f, 52f), RowColor).transform;
                 var badge = Box("Key", row, LC, LC, new Vector2(11f, 0f), new Vector2(30f, 30f), new Color(1f, 1f, 1f, 0.92f)).transform;
@@ -264,7 +273,7 @@ namespace DungeonProto
                 shopPrices[i] = Label("Price", row, RC, RC, new Vector2(-14f, 0f), new Vector2(120f, 30f), 24, Gold, TextAnchor.MiddleRight, true);
             }
             Label("Footer", shop, BC, BC, new Vector2(0f, 12f), new Vector2(400f, 22f), 15, TextDim, TextAnchor.MiddleCenter);
-            LastLabel.text = "숫자 키 7 · 8 · 9 · 0 으로 삽니다";
+            LastLabel.text = "7 · 8 · 9 · 0 · - 키로 삽니다";
             shopRoot.SetActive(false);
         }
 
@@ -360,6 +369,24 @@ namespace DungeonProto
                 new Vector4(border, border, border, border));
         }
 
+        /// <summary>속이 빈 고리 (조준 대상 표시).</summary>
+        static Sprite MakeRing(int size, float thickness)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+            var px = new Color32[size * size];
+            float c = size * 0.5f, outer = c - 1f, inner = outer - thickness;
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    float d = Mathf.Sqrt((x + 0.5f - c) * (x + 0.5f - c) + (y + 0.5f - c) * (y + 0.5f - c));
+                    float a = Mathf.Clamp01(outer - d + 0.5f) * Mathf.Clamp01(d - inner + 0.5f);
+                    px[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
+            tex.SetPixels32(px);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
         /// <summary>가운데는 투명하고 가장자리로 갈수록 진해지는 그림 (피격 표시).</summary>
         static Sprite MakeVignette(int size)
         {
@@ -382,6 +409,7 @@ namespace DungeonProto
         void LateUpdate()
         {
             if (canvas == null) return;
+            if (cam == null) cam = Camera.main;
             var kb = Keyboard.current;
             if (kb != null && kb.hKey.wasPressedThisFrame)
             {
@@ -445,7 +473,7 @@ namespace DungeonProto
             if (tool != lastTool)
             {
                 lastTool = tool;
-                for (int i = 0; i < 5; i++)
+                for (int i = 0; i < ToolNames.Length; i++)
                 {
                     bool selected = i == tool;
                     slotPanels[i].color = selected ? PanelSelected : PanelColor;
@@ -459,6 +487,7 @@ namespace DungeonProto
             SetCount(1, markers, game.GuideMarkers <= 0);
             SetCount(2, markers, game.GuideMarkers <= 0);
             SetCount(3, game.SafeZones + "개", game.SafeZones <= 0);
+            SetCount(5, game.HidingSpots + "개", game.HidingSpots <= 0);
 
             var decoy = PrototypeSettings.Active.decoy;
             float fullWidth = slotRects[4].sizeDelta.x - 24f, progress = 1f;
@@ -509,7 +538,9 @@ namespace DungeonProto
             // 상호작용 안내
             string prompt = null;
             var aimed = player.AimedCivilian;
+            var spot = player.AimedSpot;
             if (player.Carried != null) prompt = PromptDrop;
+            else if (spot != null) prompt = !spot.IsOpen ? PromptOpen : spot.OccupantCount > 0 ? PromptTakeOut : PromptEmpty;
             else if (aimed != null) prompt = !aimed.IsAlive ? PromptCorpse : player.IsFollower(aimed) ? PromptUnfollow : PromptFollow;
             if (!ReferenceEquals(prompt, lastPrompt))
             {
@@ -517,9 +548,19 @@ namespace DungeonProto
                 ShowPill(promptPanel, promptText, prompt, TextMain);
             }
 
-            var crossColor = aimed != null ? Good : Color.white;
+            var crossColor = player.HasAimTarget ? Good : Color.white;
             if (crosshair[0].color != crossColor)
                 for (int i = 0; i < crosshair.Length; i++) crosshair[i].color = crossColor;
+
+            // 조준하고 있는 대상 위에 고리를 그려, 지금 누구에게 상호작용하는지 보여 준다
+            bool ringOn = player.HasAimTarget && cam != null;
+            if (ringOn)
+            {
+                var sp = cam.WorldToScreenPoint(player.AimPoint);
+                ringOn = sp.z > 0.1f;
+                if (ringOn) aimRing.rectTransform.anchoredPosition = new Vector2(sp.x, sp.y) / canvas.scaleFactor;
+            }
+            if (aimRing.gameObject.activeSelf != ringOn) aimRing.gameObject.SetActive(ringOn);
 
             // 지금 든 도구로 할 수 있는 일, 또는 할 수 없는 이유
             string status = null;
@@ -542,6 +583,11 @@ namespace DungeonProto
                     if (game.SafeZones <= 0) { status = "안전지대가 없습니다  ·  상점에서 살 수 있습니다"; warn = true; }
                     else if (player.PreviewValid) status = "좌클릭: 지금 서 있는 자리에 안전지대 설치";
                     else { status = "여기에는 설치할 수 없습니다  ·  건물 안에서만 가능"; warn = true; }
+                    break;
+                case ToolKind.HidingSpot:
+                    if (game.HidingSpots <= 0) { status = "숨을 곳이 없습니다  ·  상점에서 살 수 있습니다"; warn = true; }
+                    else if (player.PreviewValid) status = "좌클릭: 앞 바닥에 숨을 곳 설치  ·  문이 내 쪽을 봅니다";
+                    else { status = "여기에는 설치할 수 없습니다  ·  건물 안의 빈 바닥에만 가능"; warn = true; }
                     break;
                 case ToolKind.Decoy:
                     if (!game.HasDecoy) { status = "디코이가 없습니다  ·  상점에서 살 수 있습니다"; warn = true; }
@@ -614,6 +660,7 @@ namespace DungeonProto
             ShopRow(1, "유도표시 1개", "보유 " + game.GuideMarkers + "개  ·  탈출용·안전지대용 공용", shop.guideMarkerPrice, false);
             ShopRow(2, "안전지대 1개", "보유 " + game.SafeZones + "개", shop.safeZonePrice, false);
             ShopRow(3, "디코이", game.HasDecoy ? "보유 중" : "한 번 사면 여러 번 쓸 수 있음", shop.decoyPrice, game.HasDecoy);
+            ShopRow(4, "숨을 곳 1개", "보유 " + game.HidingSpots + "개  ·  민간인이 숨는 캐비닛", shop.hidingSpotPrice, false);
         }
 
         void ShopRow(int i, string name, string sub, int price, bool owned)
@@ -640,7 +687,7 @@ namespace DungeonProto
                     for (int i = 0; i < list.Count && used < worldLabels.Length; i++)
                     {
                         var c = list[i];
-                        if (c.IsCarried) continue;
+                        if (c.IsCarried || !c.IsShown) continue; // 숨은 민간인은 숨을 곳을 열어야 보인다
                         if (PlaceLabel(used, c.transform.position + Vector3.up * (c.IsAlive ? 2.1f : 0.9f), c.StateLabel,
                                        c.IsAlive ? c.StateColor : TextDim, s.civilian.labelDistance)) used++;
                     }

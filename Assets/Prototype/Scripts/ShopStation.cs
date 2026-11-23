@@ -35,7 +35,7 @@ namespace DungeonProto
             {
                 nextVisibilityCheck = Time.time + 0.2f;
                 bool visible = (cam.transform.position - sign.position).sqrMagnitude < 60f * 60f &&
-                               !Physics.Linecast(cam.transform.position, sign.position, ~0, QueryTriggerInteraction.Ignore);
+                               !Physics.Linecast(cam.transform.position, sign.position, PrototypePlayer.RayMask, QueryTriggerInteraction.Ignore);
                 if (signRenderer.enabled != visible) signRenderer.enabled = visible;
             }
 

@@ -8,7 +8,7 @@ namespace DungeonProto
     public enum GuideMarkerKind { Exit, SafeZone }
 
     /// <summary>
-    /// 유도표시(유도 스티커). 플레이어가 바닥이나 벽에 붙이는 화살표.
+    /// 유도표시(유도 스티커). 플레이어가 바닥에 붙이는 화살표.
     /// 민간인은 보이는 유도표시로 걸어간 뒤, 화살표 방향 쪽의 가까운 유도표시로 이어서 이동한다.
     /// </summary>
     public class GuideMarker : MonoBehaviour
@@ -35,39 +35,36 @@ namespace DungeonProto
         void OnDisable() => All.Remove(this);
 
         /// <summary>
-        /// 바라보는 면(point, normal)에 붙일 수 있는지와 화살표 방향을 구한다.
-        /// 화살표는 플레이어가 보는 방향을 가리킨다. 벽에서는 그 방향을 벽면에 눕힌다.
+        /// 바라보는 곳의 바닥에 붙일 자리를 구한다. 화살표는 보는 방향을 가리킨다.
+        ///  - 조준선이 벽이나 물건에 닿으면 그 앞 바닥, 아무것도 닿지 않으면 maxDistance 앞의 바닥을 고른다.
+        ///  - 걸을 수 있는 바닥(NavMesh)의 가장 가까운 점으로 맞춘다. 상자나 책상 위, 바닥 밖은 받지 않는다.
+        /// feetY 는 플레이어가 서 있는 바닥의 높이, fallbackForward 는 똑바로 아래를 볼 때 쓸 방향,
+        /// mask 는 판정선에 걸릴 레이어 (플레이어 자신의 몸은 빼고 넘긴다).
         /// </summary>
-        public static bool TryGetPlacement(Vector3 point, Vector3 normal, Vector3 viewForward, out Placement p)
+        public static bool TryGetFloorPlacement(Vector3 origin, Vector3 viewForward, Vector3 fallbackForward, float feetY,
+                                                float maxDistance, int mask, out Placement p)
         {
             p = default;
-            if (normal.y < -0.3f) return false; // 천장에는 붙이지 않는다
+            Vector3 probe = Physics.Raycast(origin, viewForward, out var hit, maxDistance, mask, QueryTriggerInteraction.Ignore)
+                ? hit.point + hit.normal * 0.35f
+                : origin + viewForward * maxDistance;
 
-            Vector3 dir;
-            if (normal.y > 0.7f)
-            {
-                normal = Vector3.up;
-                dir = Vector3.ProjectOnPlane(viewForward, Vector3.up);
-            }
-            else
-            {
-                normal.y = 0f;
-                normal.Normalize();
-                dir = Vector3.ProjectOnPlane(viewForward, normal);
-                dir.y = 0f;
-                // 벽을 정면으로 보고 있으면 방향이 정해지지 않으므로 오른쪽으로 둔다
-                if (dir.sqrMagnitude < 0.04f) dir = Vector3.Cross(Vector3.up, -normal);
-            }
+            // 플레이어가 서 있는 높이의 걸을 수 있는 바닥에서 가장 가까운 점
+            if (!NavMesh.SamplePosition(new Vector3(probe.x, feetY, probe.z), out var nav, 1.2f, NavMesh.AllAreas)) return false;
+            if (Mathf.Abs(nav.position.y - feetY) > 0.4f) return false;
+
+            // 그 점 바로 아래의 바닥 면을 찾아 정확한 높이에 붙인다
+            if (!Physics.Raycast(nav.position + Vector3.up * 0.5f, Vector3.down, out var floor, 1.2f, mask, QueryTriggerInteraction.Ignore)) return false;
+            if (floor.normal.y < 0.7f) return false;
+
+            var dir = Vector3.ProjectOnPlane(viewForward, Vector3.up);
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.ProjectOnPlane(fallbackForward, Vector3.up);
             if (dir.sqrMagnitude < 1e-4f) return false;
-            dir.Normalize();
 
-            // 민간인이 걸어갈 수 있는 곳(NavMesh) 근처여야 한다
-            if (!NavMesh.SamplePosition(point + normal * 0.5f, out var hit, 3f, NavMesh.AllAreas)) return false;
-
-            p.point = point;
-            p.normal = normal;
-            p.direction = dir;
-            p.navPoint = hit.position;
+            p.point = floor.point;
+            p.normal = Vector3.up;
+            p.direction = dir.normalized;
+            p.navPoint = nav.position;
             return true;
         }
 

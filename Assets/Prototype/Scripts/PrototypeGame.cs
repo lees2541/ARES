@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace DungeonProto
 {
-    public enum ShopItem { Ammo, GuideMarker, SafeZone, Decoy }
+    public enum ShopItem { Ammo, GuideMarker, SafeZone, Decoy, HidingSpot }
 
     /// <summary>
     /// 프로토타입의 게임 상태(재화, 갖고 있는 물품, 구조 성과, 디코이)를 한곳에서 바꾸는 관리자.
@@ -23,6 +23,7 @@ namespace DungeonProto
         public int GuideMarkers { get; private set; }
         public int SafeZones { get; private set; }
         public bool HasDecoy { get; private set; }
+        public int HidingSpots { get; private set; }
 
         // 구조 성과
         public int Spawned { get; private set; }
@@ -65,6 +66,7 @@ namespace DungeonProto
             GuideMarkers = shop.startGuideMarkers;
             SafeZones = shop.startSafeZones;
             HasDecoy = shop.startWithDecoy;
+            HidingSpots = shop.startHidingSpots;
         }
 
         void OnDestroy()
@@ -180,6 +182,7 @@ namespace DungeonProto
                 case ShopItem.Ammo: return shop.ammoPackPrice;
                 case ShopItem.GuideMarker: return shop.guideMarkerPrice;
                 case ShopItem.SafeZone: return shop.safeZonePrice;
+                case ShopItem.HidingSpot: return shop.hidingSpotPrice;
                 default: return shop.decoyPrice;
             }
         }
@@ -196,6 +199,7 @@ namespace DungeonProto
                 case ShopItem.GuideMarker: GuideMarkers++; Toast("유도표시 +1"); break;
                 case ShopItem.SafeZone: SafeZones++; Toast("안전지대 +1"); break;
                 case ShopItem.Decoy: HasDecoy = true; Toast("디코이를 샀습니다"); break;
+                case ShopItem.HidingSpot: HidingSpots++; Toast("숨을 곳 +1"); break;
             }
             return true;
         }
@@ -220,6 +224,14 @@ namespace DungeonProto
         {
             if (SafeZones <= 0) { Toast("안전지대가 없습니다"); return false; }
             SafeZones--;
+            Version++;
+            return true;
+        }
+
+        public bool TryUseHidingSpot()
+        {
+            if (HidingSpots <= 0) { Toast("숨을 곳이 없습니다"); return false; }
+            HidingSpots--;
             Version++;
             return true;
         }

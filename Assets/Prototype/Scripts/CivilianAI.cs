@@ -5,7 +5,7 @@ using UnityEngine.AI;
 
 namespace DungeonProto
 {
-    public enum CivilianState { Wander, Flee, ToExit, FollowMarker, FollowPlayer, Carried, InSafeZone, Dead }
+    public enum CivilianState { Wander, Flee, ToExit, FollowMarker, FollowPlayer, Carried, InSafeZone, Dead, ToHide, Hiding }
 
     /// <summary>
     /// 민간인. 도형으로 표시하고 상태를 색과 문구로 알린다.
@@ -14,8 +14,9 @@ namespace DungeonProto
     ///  2. 적을 봄 — 도망친다
     ///  3. 탈출구가 보임 — 달려가 자력 탈출한다
     ///  4. 안전지대용 유도표시  5. 탈출용 유도표시 — 따라간다
-    ///  6. 그 밖 — 주변을 돌아다닌다
+    ///  6. 그 밖 — 숨을 곳에 숨어 지내다가 가끔 나와 주변을 돌아다닌다
     /// 안전지대에 들어가면 스스로 나오지 않는다.
+    /// 숨기: 적이 보고 있지 않을 때만 숨을 수 있고, 숨으면 안전하다. 적이 그 방에서 나가야 스스로 나온다.
     /// </summary>
     public class CivilianAI : MonoBehaviour
     {
@@ -34,6 +35,8 @@ namespace DungeonProto
             new Color(1f, 0.5f, 0.9f),      // Carried
             new Color(0.3f, 0.5f, 1f),      // InSafeZone
             new Color(0.22f, 0.22f, 0.22f), // Dead
+            new Color(0.75f, 0.6f, 1f),     // ToHide
+            new Color(0.55f, 0.4f, 0.9f),   // Hiding
         };
 
         public CivilianState State { get; private set; } = CivilianState.Wander;
@@ -42,7 +45,12 @@ namespace DungeonProto
         public bool IsCarried { get; private set; }
         /// <summary>적이 쫓을 수 있는 대상인지. 들려 있거나 안전지대 안에 있으면 쫓지 않는다.</summary>
         public bool IsTargetable =>
-            IsAlive && !IsCarried && State != CivilianState.InSafeZone && SafeZone.FindContaining(transform.position) == null;
+            IsAlive && !IsCarried && State != CivilianState.InSafeZone && State != CivilianState.Hiding &&
+            SafeZone.FindContaining(transform.position) == null;
+        /// <summary>숨을 곳 안에 있는지.</summary>
+        public bool IsHidden => State == CivilianState.Hiding;
+        /// <summary>플레이어에게 보이는지. 숨어 있으면 숨을 곳이 열려 있을 때만 보인다.</summary>
+        public bool IsShown => State != CivilianState.Hiding || (hideSpot != null && hideSpot.IsOpen);
 
         public Color StateColor => StateColors[(int)State];
 
@@ -61,6 +69,8 @@ namespace DungeonProto
                     case CivilianState.FollowPlayer: return "따라오는 중";
                     case CivilianState.Carried: return "들려 있음";
                     case CivilianState.InSafeZone: return "안전지대";
+                    case CivilianState.ToHide: return hideRun ? "숨으러 가는 중 (뛰는 중)" : "숨으러 가는 중";
+                    case CivilianState.Hiding: return "숨어 있음";
                     default: return IsCarried ? "시체 (운반 중)" : "시체";
                 }
             }
@@ -85,6 +95,10 @@ namespace DungeonProto
         readonly List<Vector3> seenThreats = new List<Vector3>();  // 이번에 보인 적들
         SafeZone zone;
         bool everInSafeZone;
+
+        HidingSpot hideSpot;            // 가고 있거나 들어가 있는 숨을 곳
+        bool hideRun;                   // 적을 보고 뛰어서 숨으러 가는 중
+        float nextHideAt, hideUntil;    // 다음에 숨으러 갈 시각, 숨어 있을 최소 시각
 
         GuideMarker currentMarker;
         bool extraWalk;                 // 다음 유도표시가 없어 화살표 방향으로 더 걷는 중
@@ -146,6 +160,7 @@ namespace DungeonProto
             nextPerceive = Time.time + Random.Range(0f, 0.2f); // 여러 명이 같은 프레임에 몰리지 않게
             var game = PrototypeGame.Instance;
             if (game != null) game.ReportSpawned();
+            nextHideAt = Time.time + Random.Range(0f, S.hiding.wanderDuration.y);
             Enter(CivilianState.Wander);
         }
 
@@ -156,6 +171,7 @@ namespace DungeonProto
             var game = PrototypeGame.Instance;
             if (game != null && game.IsInExit(transform.position) && HandleExit(game)) return;
             if (State == CivilianState.Dead || State == CivilianState.Carried) return;
+            if (State == CivilianState.Hiding) { TickHiding(); return; }
 
             if (Time.time >= nextPerceive)
             {
@@ -187,6 +203,16 @@ namespace DungeonProto
                     TickFollowMarker();
                     break;
 
+                case CivilianState.ToHide:
+                    if (hideSpot == null || !hideSpot.HasRoomFor(this) || hideSpot.IsOpen) { Enter(CivilianState.Wander); break; }
+                    if (ReachedTarget(0.8f))
+                    {
+                        // 적이 보고 있으면 숨을 수 없다
+                        if (IsWatchedByEnemy()) Enter(seenEnemy != null ? CivilianState.Flee : CivilianState.Wander);
+                        else EnterHiding();
+                    }
+                    break;
+
                 case CivilianState.FollowPlayer:
                     if (owner == null) { Enter(CivilianState.Wander); break; }
                     if (Time.time >= nextRepath)
@@ -201,7 +227,7 @@ namespace DungeonProto
         /// <summary>탈출구 반경 안에 들어왔을 때. 처리했으면(사라졌으면) true.</summary>
         bool HandleExit(PrototypeGame game)
         {
-            if (State == CivilianState.InSafeZone) return false;
+            if (State == CivilianState.InSafeZone || State == CivilianState.Hiding) return false;
             if (State == CivilianState.Dead)
             {
                 if (!IsCarried) return false; // 쓰러져 있는 시체는 들고 와야 수거로 친다
@@ -221,6 +247,8 @@ namespace DungeonProto
         {
             if (owner != null) owner.Forget(this);
             owner = null;
+            if (hideSpot != null) hideSpot.Leave(this);
+            hideSpot = null;
             All.Remove(this);
             Destroy(gameObject);
         }
@@ -289,12 +317,28 @@ namespace DungeonProto
             {
                 lastEnemyPos = seenEnemy.transform.position;
                 fleeUntil = Time.time + C.fleeMemory;
+                // 적이 나를 보고 있지 않을 때만 숨을 수 있다. 보고 있으면 도망친다
+                if (!IsWatchedByEnemy())
+                {
+                    if (State == CivilianState.ToHide) { SetHideRun(); return; }
+                    var spot = FindHidingSpot();
+                    if (spot != null) { GoHide(spot, true); return; }
+                }
                 if (State != CivilianState.Flee) Enter(CivilianState.Flee);
                 return;
             }
             if (State == CivilianState.Flee)
             {
-                if (Time.time < fleeUntil) return;
+                if (Time.time < fleeUntil)
+                {
+                    // 적을 따돌렸으면(나를 보는 적이 없으면) 가까운 숨을 곳으로 간다
+                    if (!IsWatchedByEnemy())
+                    {
+                        var spot = FindHidingSpot();
+                        if (spot != null) GoHide(spot, true);
+                    }
+                    return;
+                }
                 Enter(CivilianState.Wander);
             }
 
@@ -322,9 +366,18 @@ namespace DungeonProto
                 return;
             }
 
-            // 돌아다니는 중: 보이는 유도표시가 있으면 따라간다
+            // 돌아다니거나 숨으러 가는 중: 보이는 유도표시가 있으면 따라간다
             var marker = FindVisibleMarker(eye, true, null);
-            if (marker != null) StartMarker(marker);
+            if (marker != null) { StartMarker(marker); return; }
+            if (State == CivilianState.ToHide) return;
+
+            // 평소: 돌아다닐 만큼 돌아다녔으면 숨을 곳을 찾아간다
+            if (Time.time >= nextHideAt)
+            {
+                var spot = FindHidingSpot();
+                if (spot != null) GoHide(spot, false);
+                else nextHideAt = Time.time + 5f; // 빈 곳이 없으면 조금 뒤에 다시 찾는다
+            }
         }
 
         void Enter(CivilianState s)
@@ -333,6 +386,11 @@ namespace DungeonProto
             waitUntil = 0f;
             nextRepath = 0f;
             if (s != CivilianState.FollowMarker) { currentMarker = null; extraWalk = false; }
+            if (s != CivilianState.ToHide && s != CivilianState.Hiding && hideSpot != null)
+            {
+                hideSpot.Unreserve(this); // 숨으러 가다가 다른 일을 하게 됐다
+                hideSpot = null;
+            }
             ApplyColor();
             if (!agent.enabled || !agent.isOnNavMesh) return;
 
@@ -341,6 +399,10 @@ namespace DungeonProto
             agent.autoBraking = s != CivilianState.Flee; // 도망칠 때는 목적지 앞에서 속도를 줄이지 않는다
             switch (s)
             {
+                case CivilianState.ToHide:
+                    agent.speed = hideRun ? C.runSpeed : C.walkSpeed;
+                    MoveTo(hideSpot.EntryPoint);
+                    break;
                 case CivilianState.Wander:
                     agent.speed = C.walkSpeed;
                     PickWanderPoint();
@@ -593,7 +655,8 @@ namespace DungeonProto
         {
             if (!IsAlive || IsCarried) return;
             owner = player;
-            Enter(CivilianState.FollowPlayer);
+            if (State == CivilianState.Hiding) LeaveHiding(CivilianState.FollowPlayer);
+            else Enter(CivilianState.FollowPlayer);
         }
 
         /// <summary>따라오기를 풀고 자율 행동으로 돌아간다.</summary>
@@ -609,6 +672,13 @@ namespace DungeonProto
         {
             owner = player;
             IsCarried = true;
+            if (State == CivilianState.Hiding)
+            {
+                // 숨을 곳에서 바로 들고 나온다
+                if (hideSpot != null) hideSpot.Leave(this);
+                hideSpot = null;
+                SetShown(true);
+            }
             if (IsAlive)
             {
                 if (agent.enabled) { if (agent.isOnNavMesh) agent.ResetPath(); agent.enabled = false; }
@@ -659,6 +729,8 @@ namespace DungeonProto
             if (!IsAlive || IsCarried) return;
             if (owner != null) owner.Forget(this);
             owner = null;
+            if (hideSpot != null) hideSpot.Leave(this);
+            hideSpot = null;
             if (agent.enabled) { if (agent.isOnNavMesh) agent.ResetPath(); agent.enabled = false; }
             State = CivilianState.Dead;
             currentMarker = null;
@@ -666,6 +738,106 @@ namespace DungeonProto
             ApplyColor();
             var game = PrototypeGame.Instance;
             if (game != null) game.ReportDied(this);
+        }
+
+        // ───────────────────────────────── 숨기
+
+        /// <summary>지금 나를 보고 있는 적이 있는지.</summary>
+        bool IsWatchedByEnemy()
+        {
+            var p = transform.position + Vector3.up * 1.2f;
+            var enemies = EnemyAI.All;
+            for (int i = 0; i < enemies.Count; i++)
+                if (enemies[i].CanSeePoint(p)) return true;
+            return false;
+        }
+
+        /// <summary>찾는 거리 안에서 자리가 있고 걸어서 갈 수 있는 가장 가까운 숨을 곳. 바로 옆에 적이 있는 곳은 고르지 않는다.</summary>
+        HidingSpot FindHidingSpot()
+        {
+            float radius = S.hiding.searchRadius;
+            float bestDist = radius * radius;
+            HidingSpot best = null;
+            var list = HidingSpot.All;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var s = list[i];
+                if (s.IsOpen || !s.HasRoomFor(this)) continue;
+                float d = (s.transform.position - transform.position).sqrMagnitude;
+                if (d >= bestDist || s.EnemyNear(4f)) continue;
+                best = s;
+                bestDist = d;
+            }
+            if (best == null) return null;
+            if (!NavMesh.CalculatePath(transform.position, best.EntryPoint, NavMesh.AllAreas, pathBuffer) ||
+                pathBuffer.status != NavMeshPathStatus.PathComplete) return null;
+            return best;
+        }
+
+        /// <summary>spot 으로 숨으러 간다. run 이면 뛰어서 간다 (적을 봤을 때).</summary>
+        void GoHide(HidingSpot spot, bool run)
+        {
+            if (hideSpot != null && hideSpot != spot) hideSpot.Unreserve(this);
+            hideSpot = spot;
+            hideRun = run;
+            spot.Reserve(this);
+            Enter(CivilianState.ToHide);
+        }
+
+        void SetHideRun()
+        {
+            if (hideRun) return;
+            hideRun = true;
+            if (agent.enabled) agent.speed = C.runSpeed;
+        }
+
+        void EnterHiding()
+        {
+            var spot = hideSpot;
+            spot.Enter(this);
+            if (agent.enabled) { if (agent.isOnNavMesh) agent.ResetPath(); agent.enabled = false; }
+            col.enabled = false;
+            transform.SetPositionAndRotation(spot.InsidePoint, spot.transform.rotation);
+            State = CivilianState.Hiding;
+            currentMarker = null;
+            extraWalk = false;
+            var h = S.hiding;
+            hideUntil = Time.time + Random.Range(h.hideDuration.x, h.hideDuration.y);
+            ApplyColor();
+            SetShown(spot.IsOpen);
+        }
+
+        /// <summary>숨어 있는 동안: 숨어 있을 만큼 있었고 그 방에 적이 없으면 스스로 나온다. 플레이어가 열어 둔 동안에는 나오지 않는다.</summary>
+        void TickHiding()
+        {
+            if (Time.time < nextPerceive) return;
+            nextPerceive = Time.time + 0.5f;
+            if (hideSpot == null) { LeaveHiding(CivilianState.Wander); return; }
+            if (Time.time >= hideUntil && !hideSpot.IsOpen && !hideSpot.EnemyInRoom()) LeaveHiding(CivilianState.Wander);
+        }
+
+        /// <summary>숨을 곳에서 나와 next 상태가 된다.</summary>
+        void LeaveHiding(CivilianState next)
+        {
+            var spot = hideSpot;
+            var outPos = spot != null ? spot.EntryPoint : transform.position;
+            if (spot != null) spot.Leave(this);
+            hideSpot = null;
+            if (NavMesh.SamplePosition(outPos, out var hit, 2f, NavMesh.AllAreas)) outPos = hit.position;
+            transform.position = outPos;
+            SetShown(true);
+            col.enabled = true;
+            agent.enabled = true;
+            var h = S.hiding;
+            nextHideAt = Time.time + Random.Range(h.wanderDuration.x, h.wanderDuration.y);
+            Enter(next);
+        }
+
+        /// <summary>모습을 보이거나 감춘다. 숨을 곳이 열리고 닫힐 때 숨을 곳이 부른다.</summary>
+        public void SetShown(bool shown)
+        {
+            if (renderers == null) return;
+            for (int i = 0; i < renderers.Length; i++) renderers[i].enabled = shown;
         }
 
         // ───────────────────────────────── 표시

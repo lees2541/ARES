@@ -34,7 +34,7 @@ namespace DungeonProto
             var target = text.transform.position - transform.forward * 0.05f;
             var to = cam.transform.position - target;
             bool visible = Vector3.Dot(to, -transform.forward) > 0f && to.sqrMagnitude < 60f * 60f &&
-                           !Physics.Linecast(cam.transform.position, target, ~0, QueryTriggerInteraction.Ignore);
+                           !Physics.Linecast(cam.transform.position, target, PrototypePlayer.RayMask, QueryTriggerInteraction.Ignore);
             if (textRenderer.enabled != visible) textRenderer.enabled = visible;
         }
 

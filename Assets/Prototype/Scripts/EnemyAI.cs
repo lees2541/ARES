@@ -194,6 +194,19 @@ namespace DungeonProto
             if (State != EnemyState.Investigate || stateTimer > 1f) Enter(EnemyState.Investigate);
         }
 
+        /// <summary>point 가 이 적의 눈에 보이는지. 민간인이 "적이 보고 있지 않을 때만 숨을 수 있다"를 판단할 때 쓴다.</summary>
+        public bool CanSeePoint(Vector3 point)
+        {
+            if (State == EnemyState.Stunned) return false;
+            var e = E;
+            var eye = transform.position + Vector3.up * eyeHeight;
+            var to = point - eye;
+            float d = to.magnitude;
+            bool inView = d < e.sightRange && Vector3.Angle(transform.forward, to) < e.sightAngle * 0.5f || d < 1.8f;
+            if (!inView) return false;
+            return d < 0.3f || !Physics.Raycast(eye, to / d, d - 0.1f, ~0, QueryTriggerInteraction.Ignore);
+        }
+
         // ───────────────────────────────── 감지
 
         void Perceive()

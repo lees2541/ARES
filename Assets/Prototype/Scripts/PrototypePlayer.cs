@@ -6,17 +6,27 @@ using UnityEngine.InputSystem;
 
 namespace DungeonProto
 {
-    /// <summary>플레이어가 손에 든 도구. 숫자 키 1~5 로 고른다.</summary>
-    public enum ToolKind { Gun, ExitMarker, SafeZoneMarker, SafeZone, Decoy }
+    /// <summary>플레이어가 손에 든 도구. 숫자 키 1~6 이나 마우스 휠로 고른다.</summary>
+    public enum ToolKind { Gun, ExitMarker, SafeZoneMarker, SafeZone, Decoy, HidingSpot }
 
     /// <summary>
     /// 프로토타입용 1인칭 컨트롤러. 걷기/달리기(스태미너)/웅크리기/점프/손전등에 더해
-    /// 민간인 상호작용(따라오기·들기), 총, 유도표시·안전지대 설치, 디코이, 체력을 다룬다.
+    /// 민간인·숨을 곳 상호작용, 총, 유도표시·안전지대·숨을 곳 설치, 디코이, 체력을 다룬다.
     /// 속도·체력 같은 수치는 PrototypeSettings 에서 바꾼다. 재화와 물품 수는 PrototypeGame 이 관리한다.
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public class PrototypePlayer : MonoBehaviour
     {
+        const int ToolCount = 6;
+        /// <summary>플레이어의 몸이 놓이는 레이어 (기본 제공되는 Ignore Raycast).</summary>
+        public const int SelfLayer = 2;
+        /// <summary>
+        /// 플레이어에서 쏘는 판정선에 쓰는 마스크. 자기 몸은 뺀다.
+        /// 카메라가 몸 안에 있어도, 시선을 아래로 내리면 판정선이 자기 몸에 먼저 걸리기 때문이다.
+        /// </summary>
+        public const int RayMask = ~(1 << SelfLayer);
+        const int rayMask = RayMask;
+
         public Transform cameraRoot;
         public Light flashlight;
 
@@ -44,20 +54,28 @@ namespace DungeonProto
         public ToolKind Tool { get; private set; } = ToolKind.Gun;
         float nextFire;
         bool previewValid;
-        /// <summary>지금 든 도구를 이 자리에 쓸 수 있는지 (유도표시·안전지대·디코이). 화면 표시가 안내 문구를 고를 때 쓴다.</summary>
+        /// <summary>지금 든 도구를 이 자리에 쓸 수 있는지 (유도표시·안전지대·디코이·숨을 곳). 화면 표시가 안내 문구를 고를 때 쓴다.</summary>
         public bool PreviewValid => previewValid;
         GuideMarker.Placement previewPlacement;
-        Vector3 previewZoneCenter;
+        Vector3 previewZoneCenter, previewSpotPos;
+        Quaternion previewSpotRot;
         GameObject[] markerGhosts;
+        GameObject spotGhost;
         RangeIndicator ring;
         LineRenderer tracer;
         float tracerUntil;
 
-        // 민간인
+        // 민간인 · 숨을 곳
         readonly List<CivilianAI> followers = new List<CivilianAI>();
         Transform carryAnchor;
         public CivilianAI Carried { get; private set; }
+        /// <summary>지금 조준하고 있는 민간인 (조준 여유 각도 안에서 조준선에 가장 가까운 것).</summary>
         public CivilianAI AimedCivilian { get; private set; }
+        /// <summary>지금 조준하고 있는 숨을 곳.</summary>
+        public HidingSpot AimedSpot { get; private set; }
+        public bool HasAimTarget => AimedCivilian != null || AimedSpot != null;
+        /// <summary>조준하고 있는 대상의 위치. 화면 표시가 대상 위에 표시를 그릴 때 쓴다.</summary>
+        public Vector3 AimPoint { get; private set; }
         public int FollowerCount => followers.Count;
         public bool IsFollower(CivilianAI c) => followers.Contains(c);
 
@@ -110,7 +128,7 @@ namespace DungeonProto
             vy = 0f;
         }
 
-        // ───────────────────────────────── 민간인
+        // ───────────────────────────────── 민간인 · 숨을 곳
 
         /// <summary>줄지어 따라오게 하기 위한 앞사람. 첫 번째는 플레이어, 그다음은 바로 앞의 민간인.</summary>
         public Transform LeaderOf(CivilianAI c)
@@ -151,11 +169,97 @@ namespace DungeonProto
             else if (Game != null) Game.Toast("여기에는 내려놓을 수 없습니다");
         }
 
+        /// <summary>숨을 곳: 닫혀 있으면 연다. 열려 있고 안에 민간인이 있으면 데리고(또는 들고) 나온다. 비어 있으면 닫는다.</summary>
+        void InteractSpot(HidingSpot spot, bool carry)
+        {
+            if (!spot.IsOpen) { spot.SetOpen(true, this); return; }
+            var c = spot.FirstOccupant;
+            if (c == null) { spot.SetOpen(false, this); return; }
+            if (carry) Carry(c);
+            else ToggleFollow(c);
+        }
+
+        /// <summary>
+        /// 조준할 대상을 고른다. 조준선에 정확히 닿지 않아도, 조준 여유 각도 안에서 조준선에 가장 가까운 것을 고른다.
+        /// 벽 너머에 있는 것은 고르지 않는다.
+        /// </summary>
+        void UpdateAim()
+        {
+            AimedCivilian = null;
+            AimedSpot = null;
+            if (Carried != null) return;
+
+            var origin = cameraRoot.position;
+            var forward = cameraRoot.forward;
+            float best = float.MaxValue;
+
+            // 조준선이 숨을 곳에 직접 닿으면 그것을 고른다 (캐비닛은 커서, 한가운데를 겨누지 않아도 된다)
+            if (Physics.Raycast(origin, forward, out var direct, S.player.interactDistance, rayMask, QueryTriggerInteraction.Ignore))
+            {
+                var hitSpot = direct.collider.GetComponentInParent<HidingSpot>();
+                if (hitSpot != null)
+                {
+                    AimedSpot = hitSpot;
+                    AimPoint = hitSpot.AimPoint;
+                    best = direct.distance * 0.5f;
+                }
+            }
+
+            var spots = HidingSpot.All;
+            for (int i = 0; i < spots.Count; i++)
+            {
+                var s = spots[i];
+                if (!AimScore(origin, forward, s.AimPoint, s, out float score) || score >= best) continue;
+                best = score;
+                AimedSpot = s;
+                AimPoint = s.AimPoint;
+            }
+
+            var civilians = CivilianAI.All;
+            for (int i = 0; i < civilians.Count; i++)
+            {
+                var c = civilians[i];
+                if (c.IsHidden || c.IsCarried) continue; // 숨은 민간인은 숨을 곳을 통해서만 만난다
+                var basePos = c.transform.position;
+                // 서 있는 민간인은 다리·몸통·머리, 쓰러진 시체는 바닥 가까이를 본다
+                int points = c.IsAlive ? 3 : 1;
+                for (int k = 0; k < points; k++)
+                {
+                    var p = basePos + Vector3.up * (c.IsAlive ? 0.45f + k * 0.55f : 0.3f);
+                    if (!AimScore(origin, forward, p, null, out float score) || score >= best) continue;
+                    best = score;
+                    AimedCivilian = c;
+                    AimedSpot = null;
+                    AimPoint = p;
+                }
+            }
+        }
+
+        /// <summary>point 를 조준할 수 있으면 점수(낮을수록 조준선에 가깝다)를 낸다. own 은 point 를 감싼 숨을 곳.</summary>
+        bool AimScore(Vector3 origin, Vector3 forward, Vector3 point, HidingSpot own, out float score)
+        {
+            score = 0f;
+            var P = S.player;
+            var to = point - origin;
+            float d = to.magnitude;
+            if (d > P.interactDistance || d < 0.01f) return false;
+            float angle = Vector3.Angle(forward, to);
+            // 바로 앞에 있는 것은 넉넉하게 잡아 준다
+            float limit = d < 1.4f ? Mathf.Max(P.interactAngle, 35f) : P.interactAngle;
+            if (angle > limit) return false;
+            // 가로막혀 있으면 고르지 않는다 (민간인의 충돌체는 트리거라 가로막지 않는다)
+            if (Physics.Raycast(origin, to / d, out var hit, d - 0.05f, rayMask, QueryTriggerInteraction.Ignore) &&
+                (own == null || hit.collider.GetComponentInParent<HidingSpot>() != own)) return false;
+            score = angle + d * 0.5f;
+            return true;
+        }
+
         // ───────────────────────────────── 시작
 
         void Start()
         {
             cc = GetComponent<CharacterController>();
+            gameObject.layer = SelfLayer; // 적과 민간인의 시야 판정(모든 레이어)에는 그대로 걸린다
             stamina = S.player.staminaMax;
             Health = MaxHealth;
 
@@ -169,7 +273,7 @@ namespace DungeonProto
 
             if (GetComponent<NavMeshModifier>() == null) gameObject.AddComponent<NavMeshModifier>().ignoreFromBuild = true;
 
-            // 든 민간인을 붙이는 자리: 화면 오른쪽 아래에 보인다
+            // 든 민간인을 붙이는 자리
             carryAnchor = new GameObject("CarryAnchor").transform;
             carryAnchor.SetParent(transform, false);
             carryAnchor.localPosition = new Vector3(0.55f, 0.85f, 0.6f);
@@ -180,6 +284,16 @@ namespace DungeonProto
                 GuideMarker.BuildVisual(GuideMarkerKind.SafeZone, true),
             };
             foreach (var g in markerGhosts) g.SetActive(false);
+
+            // 숨을 곳을 놓을 자리 미리보기: 바닥의 발자국과 문 쪽 표시
+            spotGhost = new GameObject("HidingSpotPreview");
+            var ghostMat = ProtoVisuals.Lit(new Color(0.7f, 0.85f, 1f), true);
+            ProtoVisuals.Primitive(PrimitiveType.Cube, "Footprint", spotGhost.transform, new Vector3(0f, 0.02f, 0f),
+                new Vector3(HidingSpot.Width, 0.03f, HidingSpot.Depth), ghostMat);
+            ProtoVisuals.Primitive(PrimitiveType.Cube, "DoorSide", spotGhost.transform, new Vector3(0f, 0.05f, HidingSpot.Depth * 0.5f + 0.12f),
+                new Vector3(HidingSpot.Width * 0.6f, 0.03f, 0.12f), ghostMat);
+            spotGhost.SetActive(false);
+
             ring = RangeIndicator.Create("RangeIndicator");
 
             var tracerGo = new GameObject("GunTracer");
@@ -228,7 +342,7 @@ namespace DungeonProto
             if (kb.cKey.wasPressedThisFrame || kb.leftCtrlKey.wasPressedThisFrame)
             {
                 if (!crouching) crouching = true;
-                else if (!Physics.Raycast(transform.position + Vector3.up * crouchHeight, Vector3.up, standHeight - crouchHeight + 0.1f, ~0, QueryTriggerInteraction.Ignore))
+                else if (!Physics.Raycast(transform.position + Vector3.up * crouchHeight, Vector3.up, standHeight - crouchHeight + 0.1f, rayMask, QueryTriggerInteraction.Ignore))
                     crouching = false;
             }
             cc.height = Mathf.MoveTowards(cc.height, crouching ? crouchHeight : standHeight, dt * 6f);
@@ -265,20 +379,22 @@ namespace DungeonProto
             if (kb.digit3Key.wasPressedThisFrame) Tool = ToolKind.SafeZoneMarker;
             if (kb.digit4Key.wasPressedThisFrame) Tool = ToolKind.SafeZone;
             if (kb.digit5Key.wasPressedThisFrame) Tool = ToolKind.Decoy;
+            if (kb.digit6Key.wasPressedThisFrame) Tool = ToolKind.HidingSpot;
             // 마우스 휠로도 도구를 바꾼다 (아래로 굴리면 다음 칸)
             float wheel = mouse.scroll.ReadValue().y;
-            if (locked && Mathf.Abs(wheel) > 0.01f) Tool = (ToolKind)(((int)Tool + (wheel < 0f ? 1 : 4)) % 5);
+            if (locked && Mathf.Abs(wheel) > 0.01f) Tool = (ToolKind)(((int)Tool + (wheel < 0f ? 1 : ToolCount - 1)) % ToolCount);
 
-            // 바라보는 민간인 (민간인의 충돌체는 트리거)
-            AimedCivilian = null;
-            var cam = cameraRoot;
-            if (Carried == null && Physics.Raycast(cam.position, cam.forward, out var aimHit, P.interactDistance, ~0, QueryTriggerInteraction.Collide))
-                AimedCivilian = aimHit.collider.GetComponentInParent<CivilianAI>();
-
-            if (kb.eKey.wasPressedThisFrame && AimedCivilian != null && AimedCivilian.IsAlive) ToggleFollow(AimedCivilian);
+            // 상호작용
+            UpdateAim();
+            if (kb.eKey.wasPressedThisFrame)
+            {
+                if (AimedSpot != null) InteractSpot(AimedSpot, false);
+                else if (AimedCivilian != null && AimedCivilian.IsAlive) ToggleFollow(AimedCivilian);
+            }
             if (kb.gKey.wasPressedThisFrame)
             {
                 if (Carried != null) DropCarried(false);
+                else if (AimedSpot != null) InteractSpot(AimedSpot, true);
                 else if (AimedCivilian != null) Carry(AimedCivilian);
             }
 
@@ -290,14 +406,16 @@ namespace DungeonProto
                 if (kb.digit8Key.wasPressedThisFrame) game.TryBuy(ShopItem.GuideMarker);
                 if (kb.digit9Key.wasPressedThisFrame) game.TryBuy(ShopItem.SafeZone);
                 if (kb.digit0Key.wasPressedThisFrame) game.TryBuy(ShopItem.Decoy);
+                if (kb.minusKey.wasPressedThisFrame) game.TryBuy(ShopItem.HidingSpot);
             }
 
             UpdatePreview();
             if (locked && mouse.leftButton.wasPressedThisFrame && game != null) UseTool(game);
 
             // 물체 잡기 (오른쪽 버튼)
+            var cam = cameraRoot;
             if (locked && mouse.rightButton.wasPressedThisFrame && held == null &&
-                Physics.Raycast(cam.position, cam.forward, out var lootHit, grabDistance, ~0, QueryTriggerInteraction.Ignore) &&
+                Physics.Raycast(cam.position, cam.forward, out var lootHit, grabDistance, rayMask, QueryTriggerInteraction.Ignore) &&
                 lootHit.rigidbody != null && lootHit.rigidbody.GetComponent<SpawnMarker>() != null)
                 GrabLoot(lootHit.rigidbody);
             if (mouse.rightButton.wasReleasedThisFrame && held != null) ReleaseLoot();
@@ -305,11 +423,11 @@ namespace DungeonProto
 
         // ───────────────────────────────── 도구
 
-        /// <summary>설치 전 미리보기: 유도표시의 모양과, 도구가 미치는 범위 원을 항상 보여 준다.</summary>
+        /// <summary>설치 전 미리보기: 놓일 자리의 모양과, 도구가 미치는 범위 원을 항상 보여 준다.</summary>
         void UpdatePreview()
         {
             previewValid = false;
-            bool showRing = false;
+            bool showRing = false, showSpot = false;
             Vector3 ringCenter = default;
             float ringRadius = 0f;
             int ghost = -1;
@@ -319,8 +437,9 @@ namespace DungeonProto
             {
                 case ToolKind.ExitMarker:
                 case ToolKind.SafeZoneMarker:
-                    if (Physics.Raycast(cam.position, cam.forward, out var hit, S.guideMarker.placeDistance, ~0, QueryTriggerInteraction.Ignore) &&
-                        GuideMarker.TryGetPlacement(hit.point, hit.normal, cam.forward, out previewPlacement))
+                    // 바라보는 곳의 바닥에 붙인다. 벽이나 물건을 보고 있으면 그 앞 바닥이 된다
+                    if (GuideMarker.TryGetFloorPlacement(cam.position, cam.forward, transform.forward, transform.position.y,
+                            S.guideMarker.placeDistance, rayMask, out previewPlacement))
                     {
                         previewValid = true;
                         ghost = Tool == ToolKind.ExitMarker ? 0 : 1;
@@ -354,10 +473,32 @@ namespace DungeonProto
                         previewValid = game != null && game.HasDecoy && game.DecoyCooldownLeft <= 0f;
                     }
                     break;
+
+                case ToolKind.HidingSpot:
+                {
+                    // 플레이어 앞 바닥에, 문이 플레이어 쪽을 보도록 놓는다
+                    var forward = transform.forward;
+                    var target = transform.position + forward * S.hiding.placeDistance;
+                    if (NavMesh.SamplePosition(target, out var spotNav, 0.8f, NavMesh.AllAreas) &&
+                        Mathf.Abs(spotNav.position.y - transform.position.y) < 0.5f &&
+                        Physics.Raycast(spotNav.position + Vector3.up * 0.5f, Vector3.down, out var floor, 1.2f, rayMask, QueryTriggerInteraction.Ignore))
+                    {
+                        showSpot = true;
+                        previewSpotPos = floor.point;
+                        previewSpotRot = Quaternion.LookRotation(-forward);
+                        // 벽이나 물건, 사람과 겹치면 놓을 수 없다
+                        var half = new Vector3(HidingSpot.Width, HidingSpot.Height, HidingSpot.Depth) * 0.5f - Vector3.one * 0.04f;
+                        previewValid = !Physics.CheckBox(floor.point + Vector3.up * (HidingSpot.Height * 0.5f + 0.06f), half, previewSpotRot,
+                            rayMask, QueryTriggerInteraction.Ignore);
+                        spotGhost.transform.SetPositionAndRotation(previewSpotPos, previewSpotRot);
+                    }
+                    break;
+                }
             }
 
             for (int i = 0; i < markerGhosts.Length; i++)
                 if (markerGhosts[i].activeSelf != (i == ghost)) markerGhosts[i].SetActive(i == ghost);
+            if (spotGhost.activeSelf != showSpot) spotGhost.SetActive(showSpot);
 
             var R = S.rangeIndicator;
             if (showRing && R.show) ring.Show(ringCenter, ringRadius, previewValid ? R.validColor : R.invalidColor);
@@ -392,6 +533,12 @@ namespace DungeonProto
                 case ToolKind.Decoy:
                     game.TryActivateDecoy(transform);
                     break;
+
+                case ToolKind.HidingSpot:
+                    if (!previewValid) { game.Toast("여기에는 설치할 수 없습니다"); return; }
+                    if (!game.TryUseHidingSpot()) return;
+                    HidingSpot.Create(previewSpotPos, previewSpotRot);
+                    break;
             }
         }
 
@@ -401,7 +548,7 @@ namespace DungeonProto
             var cam = cameraRoot;
             var G = S.gun;
             var end = cam.position + cam.forward * G.range;
-            if (Physics.Raycast(cam.position, cam.forward, out var hit, G.range, ~0, QueryTriggerInteraction.Ignore))
+            if (Physics.Raycast(cam.position, cam.forward, out var hit, G.range, rayMask, QueryTriggerInteraction.Ignore))
             {
                 end = hit.point;
                 var enemy = hit.collider.GetComponentInParent<EnemyAI>();

@@ -43,6 +43,9 @@ namespace DungeonProto
         [Setting("안전지대")]
         public SafeZoneConfig safeZone = new SafeZoneConfig();
 
+        [Setting("숨을 곳", "민간인이 숨는 캐비닛. 맵에 드문드문 놓이고 플레이어가 사서 설치할 수도 있다.")]
+        public HidingConfig hiding = new HidingConfig();
+
         [Setting("총")]
         public GunConfig gun = new GunConfig();
 
@@ -124,6 +127,8 @@ namespace DungeonProto
             public int safeZonePrice = 150;
             [Setting("디코이 가격", 0, 5000, "한 번 사면 여러 번 쓸 수 있다.")]
             public int decoyPrice = 100;
+            [Setting("숨을 곳 가격 (1개)", 0, 5000)]
+            public int hidingSpotPrice = 60;
 
             [Setting("시작 재화", 0, 5000)]
             public int startCurrency = 100;
@@ -135,6 +140,8 @@ namespace DungeonProto
             public int startSafeZones = 0;
             [Setting("디코이를 갖고 시작")]
             public bool startWithDecoy = false;
+            [Setting("시작 숨을 곳 (개)", 0, 20)]
+            public int startHidingSpots = 0;
         }
 
         [Serializable]
@@ -194,8 +201,8 @@ namespace DungeonProto
             public float memorySeconds = 30f;
             [Setting("도착으로 치는 거리 (m)", 0.3f, 3f)]
             public float arriveDistance = 1f;
-            [Setting("설치할 수 있는 거리 (m)", 1f, 10f, "플레이어가 바라보는 면까지의 최대 거리.")]
-            public float placeDistance = 4f;
+            [Setting("설치할 수 있는 거리 (m)", 1f, 12f, "바라보는 방향으로 이 거리 안의 바닥에 붙인다. 벽이나 물건을 보고 있으면 그 앞 바닥에 붙는다.")]
+            public float placeDistance = 6f;
         }
 
         [Serializable]
@@ -203,6 +210,25 @@ namespace DungeonProto
         {
             [Setting("반경 (m)", 1f, 12f, "설치 전 범위 표시기가 보여 주는 범위. 복도 폭(4m)보다 크면 복도를 막는다.")]
             public float radius = 3f;
+        }
+
+        [Serializable]
+        public class HidingConfig
+        {
+            [Setting("숨어 있는 시간 (초, 최소~최대)", "이 시간이 지나고 그 방에 적이 없으면 스스로 나와 돌아다닌다. 길수록 덜 죽는다.")]
+            public Vector2 hideDuration = new Vector2(30f, 60f);
+            [Setting("돌아다니는 시간 (초, 최소~최대)", "나와서 이만큼 돌아다닌 뒤 다시 숨을 곳을 찾아간다. 짧을수록 덜 죽는다.")]
+            public Vector2 wanderDuration = new Vector2(10f, 25f);
+            [Setting("숨을 곳을 찾는 거리 (m)", 3f, 100f, "이 거리 안의 빈 숨을 곳 가운데 가장 가까운 곳으로 간다.")]
+            public float searchRadius = 30f;
+            [Setting("한 곳에 숨을 수 있는 인원 (명)", 1, 5)]
+            public int capacity = 1;
+            [Setting("방에 숨을 곳이 놓일 확률", 0f, 1f, "맵을 만들 때 방마다 숨을 곳 하나가 놓일 확률.")]
+            public float mapChance = 0.35f;
+            [Setting("설치 거리 (m)", 0.8f, 4f, "플레이어 앞 이 거리의 바닥에 설치한다.")]
+            public float placeDistance = 1.6f;
+            [Setting("자동으로 닫히는 거리 (m)", 2f, 20f, "열어 둔 숨을 곳은 플레이어가 이만큼 멀어지면 닫힌다.")]
+            public float autoCloseDistance = 5f;
         }
 
         [Serializable]
@@ -265,8 +291,10 @@ namespace DungeonProto
             public float staminaRecover = 0.6f;
             [Setting("마우스 감도", 0.01f, 1f)]
             public float mouseSensitivity = 0.1f;
-            [Setting("상호작용 거리 (m)", 1f, 8f, "민간인에게 따라오기·들기를 할 수 있는 거리.")]
-            public float interactDistance = 3f;
+            [Setting("상호작용 거리 (m)", 1f, 8f, "민간인과 숨을 곳에 상호작용할 수 있는 거리.")]
+            public float interactDistance = 3.5f;
+            [Setting("조준 여유 각도 (도)", 2f, 45f, "조준선에서 이 각도 안에 있으면 정확히 겨누지 않아도 상호작용 대상으로 잡힌다. 클수록 잡기 쉽다.")]
+            public float interactAngle = 14f;
         }
 
         [Serializable]
@@ -333,6 +361,8 @@ namespace DungeonProto
         {
             if (population.maxOutside < population.minOutside) population.maxOutside = population.minOutside;
             if (civilian.wanderWait.y < civilian.wanderWait.x) civilian.wanderWait.y = civilian.wanderWait.x;
+            if (hiding.hideDuration.y < hiding.hideDuration.x) hiding.hideDuration.y = hiding.hideDuration.x;
+            if (hiding.wanderDuration.y < hiding.wanderDuration.x) hiding.wanderDuration.y = hiding.wanderDuration.x;
         }
     }
 }
