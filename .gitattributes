@@ -97,6 +97,11 @@ Packages/packages-lock.json linguist-generated
 *.stl                   lfs
 *.ztl                   lfs
 
+# 3D models: 템플릿에 없는 Tripo 내보내기 형식 (ARES에서 추가)
+*.3mf                   lfs
+*.glb                   lfs
+*.usdz                  lfs
+
 # Audio
 *.aif                   lfs
 *.aiff                  lfs
