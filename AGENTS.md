@@ -11,6 +11,7 @@
 늘어나는 관리 부담을 감당하지 못해 결국 범람으로 끝나는 **1인칭 멀티플레이 협동 호러 탐험·구조·관리 게임**.
 
 - 엔진: Unity **6000.6.10f1**, URP 17.6, Input System, AI Navigation(NavMesh)
+- 네트워크: Netcode for GameObjects + Unity Multiplayer Services + Vivox(음성), 호스트 방식 (결정 기록 D-014, 패키지는 아직 설치 전)
 - 개발 기간: 2026-11-18 ~ 2027-02 말, **출시 목표**
 - 팀 문서 원본: Notion (워크스페이스 "우나언") / AI 참고용 사본·기술 문서: `Docs/` (저장소 안의 마크다운 문서)
 
@@ -54,7 +55,7 @@
 
 | 대상 | 이유 |
 |---|---|
-| `ProjectSettings/`, `Packages/manifest.json`, `Packages/packages-lock.json` | 모든 사람의 프로젝트가 함께 바뀐다. 네트워크(멀티플레이) 패키지는 결정 전이라 특히 추가하지 않는다 |
+| `ProjectSettings/`, `Packages/manifest.json`, `Packages/packages-lock.json` | 모든 사람의 프로젝트가 함께 바뀐다. 네트워크는 Netcode for GameObjects 조합으로 정해졌으므로(D-014) 다른 네트워크 라이브러리를 추가하지 않는다 |
 | `.gitattributes`, `.gitignore`, `.claude/`, `AGENTS.md`, `CLAUDE.md` | 저장소와 AI의 동작 규칙이다 |
 | PM만 고치는 문서 — 기획 문서, 결정 기록 등 (규칙 5의 표), Notion 원본 | 기획서는 PM이 작성한다. 문서마다 쓰는 사람이 하나여야 내용이 겹치거나 어긋나지 않는다 |
 | `main`, `dev`, `prototype` 브랜치에 직접 커밋·병합 | 이 브랜치들에는 PM만 합친다 (아래 "브랜치와 병합"). 예외: `모델-업로드/`에 모델을 올리는 것은 `main`에 한다 |
