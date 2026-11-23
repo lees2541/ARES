@@ -38,11 +38,13 @@ MonoBehaviour:
     guideMarkerPrice: 15
     safeZonePrice: 150
     decoyPrice: 100
+    hidingSpotPrice: 60
     startCurrency: 100
     startAmmo: 6
     startGuideMarkers: 3
     startSafeZones: 0
     startWithDecoy: 0
+    startHidingSpots: 0
   civilian:
     walkSpeed: 1.5
     runSpeed: 4.35
@@ -66,9 +68,17 @@ MonoBehaviour:
     arrowConeAngle: 120
     memorySeconds: 30
     arriveDistance: 1
-    placeDistance: 4
+    placeDistance: 6
   safeZone:
     radius: 3
+  hiding:
+    hideDuration: {x: 30, y: 60}
+    wanderDuration: {x: 10, y: 25}
+    searchRadius: 30
+    capacity: 1
+    mapChance: 0.35
+    placeDistance: 1.6
+    autoCloseDistance: 5
   gun:
     stunSeconds: 3
     range: 25
@@ -94,7 +104,8 @@ MonoBehaviour:
     staminaMax: 5
     staminaRecover: 0.6
     mouseSensitivity: 0.1
-    interactDistance: 3
+    interactDistance: 3.5
+    interactAngle: 14
   enemy:
     count: 4
     firstSpawnDelay: 2
