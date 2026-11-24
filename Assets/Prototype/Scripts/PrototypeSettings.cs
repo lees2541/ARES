@@ -61,6 +61,9 @@ namespace DungeonProto
         [Setting("적")]
         public EnemyConfig enemy = new EnemyConfig();
 
+        [Setting("소리", "소리 파일 없이 코드로 만든 임시 소리다. 음량과 들리는 거리를 여기서 바꾼다.")]
+        public AudioConfig audio = new AudioConfig();
+
         // ───────────────────────────────── 묶음
 
         [Serializable]
@@ -229,6 +232,8 @@ namespace DungeonProto
             public float placeDistance = 1.6f;
             [Setting("자동으로 닫히는 거리 (m)", 2f, 20f, "열어 둔 숨을 곳은 플레이어가 이만큼 멀어지면 닫힌다.")]
             public float autoCloseDistance = 5f;
+            [Setting("인기척을 알아채는 거리 (m)", 0f, 15f, "민간인이 숨은 곳에 이만큼 다가가면 문이 덜컹거리고 숨소리가 들린다. 0 이면 직접 열어 봐야만 안다.")]
+            public float revealDistance = 4f;
         }
 
         [Serializable]
@@ -334,6 +339,25 @@ namespace DungeonProto
 
             [Setting("상태 문구 표시")]
             public bool showStateLabel = true;
+        }
+
+        [Serializable]
+        public class AudioConfig
+        {
+            [Setting("전체 음량", 0f, 1f, "0 이면 소리를 내지 않는다.")]
+            public float masterVolume = 0.8f;
+            [Setting("추격하는 적이 들리는 거리 (m)", 2f, 80f, "추격 중인 적의 발소리와 으르렁거리는 소리가 들리는 거리. 쫓길 때의 심장 소리도 이 거리 안에서 난다.")]
+            public float enemyChaseHearDistance = 28f;
+            [Setting("순찰하는 적이 들리는 거리 (m)", 0f, 60f, "쫓지 않는 적의 발소리가 들리는 거리. 0 이면 들리지 않는다.")]
+            public float enemyPatrolHearDistance = 14f;
+            [Setting("민간인 소리가 들리는 거리 (m)", 0f, 80f, "민간인의 비명과 사망 소리가 들리는 거리.")]
+            public float civilianHearDistance = 24f;
+            [Setting("들켰을 때 경고음", "적이 플레이어를 발견해 쫓기 시작하면, 적이 보이지 않아도 경고음을 낸다.")]
+            public bool spottedWarning = true;
+            [Setting("쫓길 때 심장 소리", "플레이어를 쫓는 적이 가까울수록 빠르고 크게 뛴다.")]
+            public bool heartbeat = true;
+            [Setting("플레이어 발소리", "걷거나 달릴 때 난다. 웅크리면 나지 않는다 (적이 듣는 소리와 같은 조건).")]
+            public bool playerFootsteps = true;
         }
 
         // ───────────────────────────────── 지금 쓰는 설정

@@ -42,6 +42,7 @@ namespace DungeonProto
         static readonly string PromptCorpse = Key + "G" + KeyEnd + " 시체 들기";
         static readonly string PromptDrop = Key + "G" + KeyEnd + " 내려놓기";
         static readonly string PromptOpen = Key + "E" + KeyEnd + " 숨을 곳 열어 보기";
+        static readonly string PromptOpenPresence = "안에서 인기척이 납니다      " + Key + "E" + KeyEnd + " 숨을 곳 열어 보기";
         static readonly string PromptTakeOut = "민간인이 숨어 있습니다      " + Key + "E" + KeyEnd + " 데리고 나오기      " + Key + "G" + KeyEnd + " 들고 나오기";
         static readonly string PromptEmpty = "비어 있습니다      " + Key + "E" + KeyEnd + " 닫기";
 
@@ -540,7 +541,9 @@ namespace DungeonProto
             var aimed = player.AimedCivilian;
             var spot = player.AimedSpot;
             if (player.Carried != null) prompt = PromptDrop;
-            else if (spot != null) prompt = !spot.IsOpen ? PromptOpen : spot.OccupantCount > 0 ? PromptTakeOut : PromptEmpty;
+            else if (spot != null)
+                prompt = !spot.IsOpen ? (spot.PresenceRevealed ? PromptOpenPresence : PromptOpen)
+                    : spot.OccupantCount > 0 ? PromptTakeOut : PromptEmpty;
             else if (aimed != null) prompt = !aimed.IsAlive ? PromptCorpse : player.IsFollower(aimed) ? PromptUnfollow : PromptFollow;
             if (!ReferenceEquals(prompt, lastPrompt))
             {

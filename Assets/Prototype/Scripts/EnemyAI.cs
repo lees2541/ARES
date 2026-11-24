@@ -26,6 +26,8 @@ namespace DungeonProto
 
         public EnemyState State { get; private set; } = EnemyState.Patrol;
         public string StateLabel => Labels[(int)State];
+        /// <summary>지금 플레이어를 쫓거나 잡는 중인지. 쫓길 때의 심장 소리가 이 값을 본다.</summary>
+        public bool IsChasingPlayer => (State == EnemyState.Chase || State == EnemyState.Catch) && targetPlayer != null;
 
         NavMeshAgent agent;
         DungeonGenerator dungeon;
@@ -43,7 +45,12 @@ namespace DungeonProto
         static readonly int SpeedHash = Animator.StringToHash("Speed");
         static readonly int CatchHash = Animator.StringToHash("Catch");
 
+        // 소리
+        AudioSource growl;
+        float stepDistance;
+
         PrototypeSettings.EnemyConfig E => PrototypeSettings.Active.enemy;
+        PrototypeSettings.AudioConfig A => PrototypeSettings.Active.audio;
 
         public void Init(DungeonGenerator d) => dungeon = d;
 
@@ -63,6 +70,7 @@ namespace DungeonProto
         void Start()
         {
             player = FindAnyObjectByType<PrototypePlayer>();
+            growl = ProtoAudio.AttachLoop(ProtoSound.EnemyGrowlLoop, transform, Vector3.up * 1.4f, A.enemyChaseHearDistance);
             Enter(EnemyState.Patrol);
         }
 
@@ -135,15 +143,66 @@ namespace DungeonProto
             }
 
             if (animator != null) animator.SetFloat(SpeedHash, agent.velocity.magnitude, 0.1f, Time.deltaTime);
+            TickSound();
+        }
+
+        /// <summary>
+        /// 발소리와 으르렁거리는 소리. 보이지 않는 곳에서 다가와도 방향과 거리를 알 수 있게 한다.
+        /// 쫓는 중에는 더 크고 빠르게, 더 멀리까지 들린다.
+        /// </summary>
+        void TickSound()
+        {
+            var a = A;
+            bool chasing = State == EnemyState.Chase;
+            float hearDistance = chasing ? a.enemyChaseHearDistance : a.enemyPatrolHearDistance;
+
+            float speed = agent.velocity.magnitude;
+            if (speed > 0.3f)
+            {
+                stepDistance += speed * Time.deltaTime;
+                if (stepDistance >= (chasing ? 1.15f : 0.8f))
+                {
+                    stepDistance = 0f;
+                    ProtoAudio.PlayAt(ProtoSound.EnemyStep, transform.position, chasing ? 1f : 0.55f, hearDistance, chasing ? 1f : 0.85f);
+                }
+            }
+
+            if (growl == null) return;
+            float loudness;
+            switch (State)
+            {
+                case EnemyState.Chase:
+                case EnemyState.Catch: loudness = 0.9f; break;
+                case EnemyState.Investigate:
+                case EnemyState.Search: loudness = 0.4f; break;
+                case EnemyState.Patrol: loudness = 0.18f; break;
+                default: loudness = 0f; break; // 대기, 무력화
+            }
+            growl.maxDistance = Mathf.Max(2f, hearDistance);
+            growl.volume = Mathf.MoveTowards(growl.volume, hearDistance > 0f ? loudness * a.masterVolume : 0f, Time.deltaTime * 1.5f);
+            growl.pitch = Mathf.MoveTowards(growl.pitch, chasing ? 1.25f : 1f, Time.deltaTime);
         }
 
         void Enter(EnemyState s)
         {
+            var prev = State;
             State = s;
             stateTimer = 0f;
             waitUntil = 0f;
             agent.isStopped = false;
             var e = E;
+
+            // 상태가 바뀔 때의 소리
+            if (s != prev)
+            {
+                var a = A;
+                var mouth = transform.position + Vector3.up * 1.4f;
+                if (s == EnemyState.Chase) ProtoAudio.PlayAt(ProtoSound.EnemyAlert, mouth, 1f, a.enemyChaseHearDistance);
+                else if (s == EnemyState.Investigate) ProtoAudio.PlayAt(ProtoSound.EnemyInvestigate, mouth, 0.7f, a.enemyPatrolHearDistance * 1.3f);
+                else if (s == EnemyState.Catch) ProtoAudio.PlayAt(ProtoSound.EnemyCatch, mouth, 1f, a.enemyChaseHearDistance);
+                else if (s == EnemyState.Stunned) ProtoAudio.PlayAt(ProtoSound.EnemyStun, mouth, 0.8f, a.enemyChaseHearDistance);
+            }
+
             switch (s)
             {
                 case EnemyState.Patrol:
@@ -261,6 +320,8 @@ namespace DungeonProto
 
         void See(Transform t, PrototypePlayer p, CivilianAI c)
         {
+            // 플레이어를 새로 쫓기 시작하는 순간: 등 뒤에서 들켜도 알 수 있게 경고음을 낸다
+            if (p != null && !IsChasingPlayer) ProtoAudio.PlaySpotted();
             target = t;
             targetPlayer = p;
             targetCivilian = c;

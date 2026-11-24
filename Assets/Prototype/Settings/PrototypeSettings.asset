@@ -16,14 +16,14 @@ MonoBehaviour:
     generateOnPlay: 1
     randomSeed: 1
     seed: 1234
-    targetRooms: 150
-    width: 208
-    depth: 208
-    loopChance: 0.3
+    targetRooms: 116
+    width: 167
+    depth: 164
+    loopChance: 0.538
     corridorChance: 0.7
   population:
-    minOutside: 7
-    maxOutside: 7
+    minOutside: 10
+    maxOutside: 10
     minSpawnDistanceFromPlayer: 15
     checkInterval: 1
   reward:
@@ -52,7 +52,7 @@ MonoBehaviour:
     followStopDistance: 1.6
     sightRange: 12
     sightAngle: 160
-    noticeRadius: 5
+    noticeRadius: 7.68
     wanderRadius: 8
     wanderWait: {x: 1, y: 3.5}
     fleeDistance: 14
@@ -79,6 +79,7 @@ MonoBehaviour:
     mapChance: 0.35
     placeDistance: 1.6
     autoCloseDistance: 5
+    revealDistance: 4
   gun:
     stunSeconds: 3
     range: 25
@@ -122,3 +123,11 @@ MonoBehaviour:
     damagePerCatch: 34
     targetPriority: 0
     showStateLabel: 1
+  audio:
+    masterVolume: 0.8
+    enemyChaseHearDistance: 28
+    enemyPatrolHearDistance: 14
+    civilianHearDistance: 24
+    spottedWarning: 1
+    heartbeat: 1
+    playerFootsteps: 1

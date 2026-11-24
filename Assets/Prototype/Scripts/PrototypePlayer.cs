@@ -41,6 +41,7 @@ namespace DungeonProto
         float pitch, vy, stamina;
         bool crouching, sprinting;
         float moveInput;
+        float stepDistance; // 다음 발소리까지 걸은 거리
 
         // 체력
         public int Health { get; private set; }
@@ -102,6 +103,7 @@ namespace DungeonProto
         {
             Health -= damage;
             HitFlashUntil = Time.time + 0.6f;
+            ProtoAudio.Play2D(ProtoSound.PlayerHit, 0.9f);
             if (Health <= 0) Caught(by);
         }
 
@@ -119,6 +121,7 @@ namespace DungeonProto
 
             TimesCaught++;
             CaughtMessageUntil = Time.time + 2.5f;
+            ProtoAudio.Play2D(ProtoSound.PlayerDown, 0.8f);
             Health = MaxHealth;
             var spawn = SpawnMarker.FindFirst(SpawnKind.PlayerSpawn);
             if (spawn == null) return;
@@ -147,9 +150,15 @@ namespace DungeonProto
 
         void ToggleFollow(CivilianAI c)
         {
-            if (followers.Remove(c)) { c.StopFollowing(); return; }
+            if (followers.Remove(c))
+            {
+                c.StopFollowing();
+                ProtoAudio.Play2D(ProtoSound.FollowOff, 0.5f);
+                return;
+            }
             followers.Add(c);
             c.StartFollowing(this);
+            ProtoAudio.Play2D(ProtoSound.FollowOn, 0.5f);
         }
 
         void Carry(CivilianAI c)
@@ -158,6 +167,7 @@ namespace DungeonProto
             c.BeginCarry(this, carryAnchor);
             Carried = c;
             AimedCivilian = null;
+            ProtoAudio.Play2D(ProtoSound.FollowOn, 0.5f, 0.8f);
         }
 
         void DropCarried(bool forced)
@@ -165,8 +175,16 @@ namespace DungeonProto
             var c = Carried;
             if (c == null) return;
             var dropPos = transform.position + transform.forward * 0.9f;
-            if (c.EndCarry(dropPos, forced)) Carried = null;
-            else if (Game != null) Game.Toast("여기에는 내려놓을 수 없습니다");
+            if (c.EndCarry(dropPos, forced))
+            {
+                Carried = null;
+                if (!forced) ProtoAudio.Play2D(ProtoSound.FollowOff, 0.5f, 0.8f);
+            }
+            else if (Game != null)
+            {
+                Game.Toast("여기에는 내려놓을 수 없습니다");
+                ProtoAudio.Play2D(ProtoSound.Deny, 0.5f);
+            }
         }
 
         /// <summary>숨을 곳: 닫혀 있으면 연다. 열려 있고 안에 민간인이 있으면 데리고(또는 들고) 나온다. 비어 있으면 닫는다.</summary>
@@ -371,6 +389,17 @@ namespace DungeonProto
             move.y = vy;
             cc.Move(move * dt);
 
+            // 발소리: 적이 듣는 소리와 같은 조건이다 (웅크리거나 멈춰 있으면 나지 않는다)
+            if (cc.isGrounded && moveInput > 0.1f && !crouching)
+            {
+                stepDistance += speed * moveInput * dt;
+                if (stepDistance >= (sprint ? 1.7f : 1.35f))
+                {
+                    stepDistance = 0f;
+                    if (S.audio.playerFootsteps) ProtoAudio.Play2D(ProtoSound.PlayerStep, sprint ? 0.45f : 0.28f, Random.Range(0.92f, 1.08f));
+                }
+            }
+
             if (kb.fKey.wasPressedThisFrame && flashlight != null) flashlight.enabled = !flashlight.enabled;
 
             // 도구 고르기
@@ -510,7 +539,7 @@ namespace DungeonProto
             switch (Tool)
             {
                 case ToolKind.Gun:
-                    if (Carried != null) { game.Toast("들고 있는 동안에는 쏠 수 없습니다"); return; }
+                    if (Carried != null) { Refuse(game, "들고 있는 동안에는 쏠 수 없습니다"); return; }
                     if (Time.time < nextFire) return;
                     if (!game.TryUseAmmo()) return;
                     nextFire = Time.time + S.gun.fireInterval;
@@ -519,15 +548,17 @@ namespace DungeonProto
 
                 case ToolKind.ExitMarker:
                 case ToolKind.SafeZoneMarker:
-                    if (!previewValid) { game.Toast("여기에는 붙일 수 없습니다"); return; }
+                    if (!previewValid) { Refuse(game, "여기에는 붙일 수 없습니다"); return; }
                     if (!game.TryUseGuideMarker()) return;
                     GuideMarker.Place(Tool == ToolKind.ExitMarker ? GuideMarkerKind.Exit : GuideMarkerKind.SafeZone, previewPlacement);
+                    ProtoAudio.Play2D(ProtoSound.PlaceMarker, 0.6f);
                     break;
 
                 case ToolKind.SafeZone:
-                    if (!previewValid) { game.Toast("여기에는 설치할 수 없습니다"); return; }
+                    if (!previewValid) { Refuse(game, "여기에는 설치할 수 없습니다"); return; }
                     if (!game.TryUseSafeZone()) return;
                     SafeZone.Place(previewZoneCenter, S.safeZone.radius);
+                    ProtoAudio.Play2D(ProtoSound.PlaceZone, 0.6f);
                     break;
 
                 case ToolKind.Decoy:
@@ -535,11 +566,19 @@ namespace DungeonProto
                     break;
 
                 case ToolKind.HidingSpot:
-                    if (!previewValid) { game.Toast("여기에는 설치할 수 없습니다"); return; }
+                    if (!previewValid) { Refuse(game, "여기에는 설치할 수 없습니다"); return; }
                     if (!game.TryUseHidingSpot()) return;
                     HidingSpot.Create(previewSpotPos, previewSpotRot);
+                    ProtoAudio.Play2D(ProtoSound.PlaceSpot, 0.7f);
                     break;
             }
+        }
+
+        /// <summary>도구를 쓸 수 없을 때: 이유를 알리고 거절음을 낸다.</summary>
+        static void Refuse(PrototypeGame game, string message)
+        {
+            game.Toast(message);
+            ProtoAudio.Play2D(ProtoSound.Deny, 0.5f);
         }
 
         /// <summary>비살상 총. 맞은 적은 설정한 시간 동안 무력화된다.</summary>
@@ -558,6 +597,7 @@ namespace DungeonProto
             tracer.SetPosition(1, end);
             tracer.enabled = true;
             tracerUntil = Time.time + 0.06f;
+            ProtoAudio.Play2D(ProtoSound.GunShot, 0.8f, Random.Range(0.95f, 1.05f));
             game.EmitNoise(transform.position, G.noiseRadius);
         }
 

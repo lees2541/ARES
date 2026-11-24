@@ -14,7 +14,9 @@ namespace DungeonProto
     ///  2. 적을 봄 — 도망친다
     ///  3. 탈출구가 보임 — 달려가 자력 탈출한다
     ///  4. 안전지대용 유도표시  5. 탈출용 유도표시 — 따라간다
-    ///  6. 그 밖 — 숨을 곳에 숨어 지내다가 가끔 나와 주변을 돌아다닌다
+    ///  6. 그 밖 — 숨을 곳에 숨어 지내다가 가끔 나와 주변을 돌아다닌다 (평소 숨기. 가장 낮은 순위)
+    /// 평소 숨기는 다른 일을 끊지 않는다. 따라오기·들림·도망·탈출구·유도표시를 마치고 돌아다니기 시작하면
+    /// "돌아다니는 시간"을 새로 센 뒤에야 숨으러 간다.
     /// 안전지대에 들어가면 스스로 나오지 않는다.
     /// 숨기: 적이 보고 있지 않을 때만 숨을 수 있고, 숨으면 안전하다. 적이 그 방에서 나가야 스스로 나온다.
     /// </summary>
@@ -99,6 +101,7 @@ namespace DungeonProto
         HidingSpot hideSpot;            // 가고 있거나 들어가 있는 숨을 곳
         bool hideRun;                   // 적을 보고 뛰어서 숨으러 가는 중
         float nextHideAt, hideUntil;    // 다음에 숨으러 갈 시각, 숨어 있을 최소 시각
+        float lastScreamAt = -99f;
 
         GuideMarker currentMarker;
         bool extraWalk;                 // 다음 유도표시가 없어 화살표 방향으로 더 걷는 중
@@ -317,6 +320,7 @@ namespace DungeonProto
             {
                 lastEnemyPos = seenEnemy.transform.position;
                 fleeUntil = Time.time + C.fleeMemory;
+                if (State != CivilianState.Flee && !(State == CivilianState.ToHide && hideRun)) Scream();
                 // 적이 나를 보고 있지 않을 때만 숨을 수 있다. 보고 있으면 도망친다
                 if (!IsWatchedByEnemy())
                 {
@@ -382,9 +386,17 @@ namespace DungeonProto
 
         void Enter(CivilianState s)
         {
+            var prev = State;
             State = s;
             waitUntil = 0f;
             nextRepath = 0f;
+            // 평소 숨기는 가장 낮은 순위다. 다른 일을 마치고 돌아다니기 시작하면 곧바로 숨으러 가지 않도록
+            // 돌아다니는 시간을 새로 센다. (평소 숨기를 하러 가다 자리가 없어 돌아선 경우는 바로 다른 곳을 찾는다.)
+            if (s == CivilianState.Wander && prev != CivilianState.Wander && !(prev == CivilianState.ToHide && !hideRun))
+            {
+                var h = S.hiding;
+                nextHideAt = Time.time + Random.Range(h.wanderDuration.x, h.wanderDuration.y);
+            }
             if (s != CivilianState.FollowMarker) { currentMarker = null; extraWalk = false; }
             if (s != CivilianState.ToHide && s != CivilianState.Hiding && hideSpot != null)
             {
@@ -736,8 +748,18 @@ namespace DungeonProto
             currentMarker = null;
             PoseLying();
             ApplyColor();
+            ProtoAudio.PlayAt(ProtoSound.CivilianDeath, transform.position + Vector3.up, 0.5f, S.audio.civilianHearDistance);
             var game = PrototypeGame.Instance;
             if (game != null) game.ReportDied(this);
+        }
+
+        /// <summary>적을 보고 놀라 지르는 소리. 같은 민간인이 연달아 지르지 않게 간격을 둔다.</summary>
+        void Scream()
+        {
+            if (Time.time - lastScreamAt < 6f) return;
+            lastScreamAt = Time.time;
+            ProtoAudio.PlayAt(ProtoSound.CivilianScream, transform.position + Vector3.up * 1.5f, 0.7f,
+                S.audio.civilianHearDistance, Random.Range(0.9f, 1.15f));
         }
 
         // ───────────────────────────────── 숨기

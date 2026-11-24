@@ -67,6 +67,7 @@ namespace DungeonProto
             SafeZones = shop.startSafeZones;
             HasDecoy = shop.startWithDecoy;
             HidingSpots = shop.startHidingSpots;
+            ProtoAudio.EnsureExists();
         }
 
         void OnDestroy()
@@ -111,6 +112,7 @@ namespace DungeonProto
         {
             Rescued++;
             AddCurrency(S.reward.rescue, "구출");
+            ProtoAudio.Play2D(ProtoSound.Rescue, 0.7f);
             if (director != null) director.OnCivilianLeft();
         }
 
@@ -119,6 +121,7 @@ namespace DungeonProto
         {
             SelfEscaped++;
             AddCurrency(S.reward.selfEscape, "자력 탈출");
+            ProtoAudio.Play2D(ProtoSound.SelfEscape, 0.45f);
             if (director != null) director.OnCivilianLeft();
         }
 
@@ -133,6 +136,7 @@ namespace DungeonProto
         {
             CorpsesRetrieved++;
             AddCurrency(S.reward.corpse, "시체 수거");
+            ProtoAudio.Play2D(ProtoSound.CorpseRetrieved, 0.6f);
         }
 
         /// <summary>민간인이 안전지대에 들어감. first 는 그 민간인이 처음 들어간 것인지.</summary>
@@ -189,10 +193,11 @@ namespace DungeonProto
 
         public bool TryBuy(ShopItem item)
         {
-            if (item == ShopItem.Decoy && HasDecoy) { Toast("디코이는 이미 갖고 있습니다"); return false; }
+            if (item == ShopItem.Decoy && HasDecoy) return Refuse("디코이는 이미 갖고 있습니다");
             int price = PriceOf(item);
-            if (Currency < price) { Toast("재화가 부족합니다"); return false; }
+            if (Currency < price) return Refuse("재화가 부족합니다");
             Currency -= price;
+            ProtoAudio.Play2D(ProtoSound.Buy, 0.6f);
             switch (item)
             {
                 case ShopItem.Ammo: Ammo += S.shop.ammoPackSize; Toast($"탄약 +{S.shop.ammoPackSize}"); break;
@@ -206,7 +211,7 @@ namespace DungeonProto
 
         public bool TryUseAmmo()
         {
-            if (Ammo <= 0) { Toast("탄약이 없습니다"); return false; }
+            if (Ammo <= 0) return Refuse("탄약이 없습니다");
             Ammo--;
             Version++;
             return true;
@@ -214,7 +219,7 @@ namespace DungeonProto
 
         public bool TryUseGuideMarker()
         {
-            if (GuideMarkers <= 0) { Toast("유도표시가 없습니다"); return false; }
+            if (GuideMarkers <= 0) return Refuse("유도표시가 없습니다");
             GuideMarkers--;
             Version++;
             return true;
@@ -222,7 +227,7 @@ namespace DungeonProto
 
         public bool TryUseSafeZone()
         {
-            if (SafeZones <= 0) { Toast("안전지대가 없습니다"); return false; }
+            if (SafeZones <= 0) return Refuse("안전지대가 없습니다");
             SafeZones--;
             Version++;
             return true;
@@ -230,7 +235,7 @@ namespace DungeonProto
 
         public bool TryUseHidingSpot()
         {
-            if (HidingSpots <= 0) { Toast("숨을 곳이 없습니다"); return false; }
+            if (HidingSpots <= 0) return Refuse("숨을 곳이 없습니다");
             HidingSpots--;
             Version++;
             return true;
@@ -245,12 +250,13 @@ namespace DungeonProto
         /// <summary>holder 가 디코이를 사용한다. 지속 시간 동안 범위 안의 적이 holder 를 1순위로 쫓는다.</summary>
         public bool TryActivateDecoy(Transform holder)
         {
-            if (!HasDecoy) { Toast("디코이가 없습니다"); return false; }
-            if (Time.time < decoyReadyAt) { Toast("디코이를 아직 다시 쓸 수 없습니다"); return false; }
+            if (!HasDecoy) return Refuse("디코이가 없습니다");
+            if (Time.time < decoyReadyAt) return Refuse("디코이를 아직 다시 쓸 수 없습니다");
             DecoyHolder = holder;
             decoyUntil = Time.time + S.decoy.duration;
             decoyReadyAt = decoyUntil + S.decoy.cooldown;
             Toast("디코이 작동");
+            ProtoAudio.Play2D(ProtoSound.DecoyOn, 0.6f);
             return true;
         }
 
@@ -273,6 +279,14 @@ namespace DungeonProto
         }
 
         // ───────────────────────────────── 알림
+
+        /// <summary>할 수 없는 일을 알리고 거절음을 낸다. 항상 false 를 돌려준다.</summary>
+        bool Refuse(string message)
+        {
+            Toast(message);
+            ProtoAudio.Play2D(ProtoSound.Deny, 0.5f);
+            return false;
+        }
 
         public void Toast(string message)
         {

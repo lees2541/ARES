@@ -604,7 +604,8 @@ namespace DungeonProto
                 }
                 if (!SpotFree(r, rect, 0.3f) || NearDoor(r, p, 2.6f)) continue;
                 r.occupied.Add(rect);
-                HidingSpot.Build(group, p, yaw, M("Cabinet"), M("CabinetDoor"));
+                HidingSpot.Build(group, p, yaw, new HidingSpot.Look(
+                    M("HidingBody"), M("HidingDoor"), M("HidingDark"), M("HidingHandle"), M("HidingPlate")));
                 return;
             }
         }
@@ -922,8 +923,12 @@ namespace DungeonProto
                 case "ShipDark": c = new Color(0.25f, 0.26f, 0.28f); break;
                 case "Glass": c = new Color(0.2f, 0.4f, 0.5f); em = new Color(0.05f, 0.2f, 0.3f); break;
                 case "Rock": c = new Color(0.28f, 0.27f, 0.26f); break;
-                case "Cabinet": c = new Color(0.23f, 0.27f, 0.34f); break;
-                case "CabinetDoor": c = new Color(0.33f, 0.4f, 0.5f); break;
+                // 숨을 곳(사물함). 색은 HidingSpot 에서 정한다
+                case "HidingBody": c = HidingSpot.BodyColor; break;
+                case "HidingDoor": c = HidingSpot.DoorColor; break;
+                case "HidingDark": c = HidingSpot.DarkColor; break;
+                case "HidingHandle": c = HidingSpot.HandleColor; break;
+                case "HidingPlate": c = HidingSpot.PlateColor; em = HidingSpot.PlateGlow; break;
                 default: c = Color.magenta; break;
             }
             var mat = LoadOrCreateMaterial("Proto_" + key, c, em);
