@@ -11,7 +11,7 @@
 늘어나는 관리 부담을 감당하지 못해 결국 범람으로 끝나는 **1인칭 멀티플레이 협동 호러 탐험·구조·관리 게임**.
 
 - 엔진: Unity **6000.6.10f1**, URP 17.6, Input System, AI Navigation(NavMesh)
-- 네트워크: Netcode for GameObjects + Unity Multiplayer Services + Vivox(음성), 호스트 방식 (결정 기록 D-014, 패키지는 아직 설치 전)
+- 네트워크: Netcode for GameObjects + Unity Multiplayer Services + Vivox(음성), 호스트 방식 (결정 기록 D-014, 패키지는 `dev`에 설치됨)
 - 개발 기간: 2026-11-18 ~ 2027-02 말, **출시 목표**
 - 팀 문서 원본: Notion (워크스페이스 "우나언") / AI 참고용 사본·기술 문서: `Docs/` (저장소 안의 마크다운 문서)
 
